@@ -5,7 +5,10 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
 from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.csv import partition_csv
 from langchain.schema import Document
+import pandas as pd
+import tempfile
 
 UPLOAD_DIR = "uploads"
 VECTOR_DB_DIR = "vectorstore"
@@ -22,6 +25,17 @@ try:
 except:
     vectorstore = None
 
+
+def clean_csv(csv_path):
+    try:
+        df = pd.read_csv(csv_path, on_bad_lines='skip')
+    except Exception as e:
+        print(f"[ERROR] Failed to read CSV: {e}")
+        return None
+
+    temp_file = tempfile.NamedTemporaryFile(mode='w+', suffix=".csv", delete=False)
+    df.to_csv(temp_file.name, index=False)
+    return temp_file.name
 
 def load_or_create_vectorstore():
     if os.path.exists(VECTOR_DB_DIR):
@@ -60,6 +74,34 @@ def add_pdf_to_vectorstore(pdf_path):
     print(f"[SUCCESS] {pdf_path} added to vector store.")
 
 
+def add_csv_to_vectorstore(csv_path):
+    print(f"[INFO] Processing {csv_path}...")
+    cleaned_csv_path = clean_csv(csv_path)
+    elements = partition_csv(filename=cleaned_csv_path)
+    documents = [
+           Document(
+               page_content=element.text.strip(),
+               metadata={
+                   "source": os.path.basename(csv_path),
+                   "element_type": element.category
+               }
+           )
+           for element in elements if element.text.strip()
+       ]
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    global vectorstore
+    if vectorstore is None:
+        print("[INFO] Creating new vector store...")
+        vectorstore = FAISS.from_documents(chunks, embedding_model)
+    else:
+        vectorstore.add_documents(chunks)
+
+    vectorstore.save_local(VECTOR_DB_DIR)
+    print(f"[SUCCESS] {csv_path} added to vector store.")
+
+
 def query_vectorstore(question, k=5, allowed_types=None):
     global vectorstore
     if vectorstore is None:
@@ -85,6 +127,12 @@ def pdf_driver():
     else:
         print("[ERROR] File not found.")
 
+def csv_driver():
+    file_name = input("Enter the path to the CSV: ").strip()
+    if os.path.exists(file_name):
+        add_csv_to_vectorstore(file_name)
+    else:
+        print("[ERROR] File not found.")
 
 if __name__ == "__main__":
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -92,20 +140,25 @@ if __name__ == "__main__":
     while True:
         print("\nOptions:")
         print("1. Upload a PDF")
-        print("2. Search documents")
-        print("3. Exit")
-        choice = input("Choose an option (1/2/3): ")
+        print("2. Upload a CSV")
+        print("3. Search documents")
+        print("4. Exit")
+        choice = input("Choose an option (1/2/3/4): ")
 
         if choice == "1":
             pdf_driver()
 
         elif choice == "2":
+            csv_driver()
+
+        elif choice == "3":
             question = input("Enter your question: ")
             query_vectorstore(question, k=1, allowed_types=None)
 
-        elif choice == "3":
+        elif choice == "4":
             print("Exiting.")
             break
+
 
         else:
             print("Invalid option.")
