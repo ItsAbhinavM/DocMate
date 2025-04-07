@@ -12,3 +12,4 @@ unstructured_inference
 pdf2image
 fastapi[standard]
 python-multipart
+python-docx

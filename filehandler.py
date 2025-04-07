@@ -9,6 +9,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.csv import partition_csv
 from unstructured.partition.xlsx import partition_xlsx
+from unstructured.partition.doc import partition_doc
 from langchain.schema import Document
 import pandas as pd
 import tempfile
@@ -139,6 +140,31 @@ def add_xlsx_to_vectorstore(xlsx_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {xlsx_path} added to vector store.")
 
+def add_doc_to_vectorstore(doc_path):
+    print(f"[INFO] Processing {doc_path}...")
+    elements = partition_doc(filename=doc_path)
+    documents=[]
+    for element in elements:
+            if element.text.strip():
+                metadata = {
+                    "source": os.path.basename(doc_path),
+                    "element_type": element.category,
+                    "page_number": element.metadata.page_number if element.metadata else None
+                }
+                documents.append(Document(page_content=element.text, metadata=metadata))
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    global vectorstore
+    if vectorstore is None:
+        print("[INFO] Creating new vector store...")
+        vectorstore = FAISS.from_documents(chunks, embedding_model)
+    else:
+        vectorstore.add_documents(chunks)
+
+    vectorstore.save_local(VECTOR_DB_DIR)
+    print(f"[SUCCESS] {doc_path} added to vector store.")
+
 def add_csv_to_vectorstore(csv_path):
     print(f"[INFO] Processing {csv_path}...")
     cleaned_csv_path = clean_csv(csv_path)
@@ -212,6 +238,12 @@ def image_driver():
         add_image_to_vectorstore(file_name)
     else:
         print("[ERROR] File not found")
+def doc_driver():
+    file_name = input("Enter the path to the DOC: ").strip()
+    if os.path.exists(file_name):
+        add_doc_to_vectorstore(file_name)
+    else:
+        print("[ERROR] File not found.")
 
 if __name__ == "__main__":
     os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -221,30 +253,26 @@ if __name__ == "__main__":
         print("1. Upload a PDF")
         print("2. Upload a CSV")
         print("3. Upload a XLSX")
-        print("4. Search documents")
-        print("5. Exit")
-        print("6. Upload an Image")
+        print("4  Upload a Doc")
+        print("5. Upload an Image")
+        print("6. Search documents")
+        print("7. Exit")
         choice = input("Choose an option (1/2/3/4): ")
 
         if choice == "1":
             pdf_driver()
-        if choice == "6":
+        if choice == "5":
             image_driver()
         elif choice == "2":
             csv_driver()
-
         elif choice == "3":
             xlsx_driver()
-
         elif choice == "4":
+            doc_driver()
+        elif choice == "6":
             question = input("Enter your question: ")
             query_vectorstore(question, k=1, allowed_types=None)
-
-        elif choice == "3":
-            question = input("Enter your question: ")
-            query_vectorstore(question)
-        elif choice == "5":
+        elif choice == "7":
             print("Exiting....")
-            break
         else:
             print("Invalid option.")
