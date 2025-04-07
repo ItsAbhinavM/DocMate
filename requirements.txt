@@ -4,3 +4,9 @@ python-dotenv
 langchain-community
 langchain-huggingface
 accelerate
+unstructured
+pdfminer
+pdfminer.six
+pi_heif
+unstructured_inference
+pdf2image

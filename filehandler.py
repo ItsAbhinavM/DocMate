@@ -4,6 +4,8 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
+from unstructured.partition.pdf import partition_pdf
+from langchain.schema import Document
 
 UPLOAD_DIR = "uploads"
 VECTOR_DB_DIR = "vectorstore"
@@ -34,13 +36,19 @@ def load_or_create_vectorstore():
 
 def add_pdf_to_vectorstore(pdf_path):
     print(f"[INFO] Processing {pdf_path}...")
-    loader = PyPDFLoader(pdf_path)
-    documents = loader.load()
-    for doc in documents:
-        doc.metadata["source"] = os.path.basename(pdf_path)
+    elements = partition_pdf(filename=pdf_path)
+    documents=[]
+    for element in elements:
+            if element.text.strip():
+                metadata = {
+                    "source": os.path.basename(pdf_path),
+                    "element_type": element.category,
+                    "page_number": element.metadata.page_number if element.metadata else None
+                }
+                documents.append(Document(page_content=element.text, metadata=metadata))
+
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
-
     global vectorstore
     if vectorstore is None:
         print("[INFO] Creating new vector store...")
@@ -52,7 +60,7 @@ def add_pdf_to_vectorstore(pdf_path):
     print(f"[SUCCESS] {pdf_path} added to vector store.")
 
 
-def query_vectorstore(question, k=1):
+def query_vectorstore(question, k=5, allowed_types=None):
     global vectorstore
     if vectorstore is None:
         print("[ERROR] No documents have been added to the vector store yet.")
@@ -60,11 +68,15 @@ def query_vectorstore(question, k=1):
 
     print(f"[QUERY] {question}")
     results = vectorstore.similarity_search(question, k=k)
+
+    if allowed_types:
+        results = [res for res in results if res.metadata.get("element_type") in allowed_types]
+
     for i, res in enumerate(results):
         print(
-            f"\n--- Result {i+1} (from {res.metadata['source']}) ---\n{res.page_content.strip()}\n"
+            f"\n--- Result {i+1} (Page: {res.metadata.get('page_number')}, Type: {res.metadata.get('element_type')}, Source: {res.metadata['source']}) ---\n"
+            f"{res.page_content.strip()[:1000]}\n"
         )
-
 
 def pdf_driver():
     file_name = input("Enter the path to the PDF: ").strip()
@@ -89,7 +101,7 @@ if __name__ == "__main__":
 
         elif choice == "2":
             question = input("Enter your question: ")
-            query_vectorstore(question)
+            query_vectorstore(question, k=1, allowed_types=None)
 
         elif choice == "3":
             print("Exiting.")
