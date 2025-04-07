@@ -33,6 +33,7 @@ document.getElementById("send-chat").addEventListener("click", async (e) => {
   }
 });
 
+// document file sending
 document.getElementById("upload-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const fileInput = document.getElementById("file-input");
@@ -49,6 +50,7 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
     buffer: uint8Array,
   });
   console.log("Upload triggered:", file.name);
+  document.getElementById("upload-form").reset();
 });
 
 function ResponseText(prompt) {
