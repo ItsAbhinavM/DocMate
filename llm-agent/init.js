@@ -2,16 +2,7 @@ document.getElementById("chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   window.api.sendMessage();
 });
-// document.getElementById("get-friends").addEventListener("click", async (e) => {
-// 	const friends = await window.api.getFriends();
-// 	const friendList = document.getElementById("friend-list");
-// 	friendList.innerHTML = "";
-// 	friendList.append(...friends.map(x => {
-// 		const li = document.createElement("li");
-// 		li.innerText = `[${x.id}] ${x.name}`;
-// 		return li;
-// 	}));
-// })
+
 document.getElementById("nav-btn").addEventListener("click", async (e) => {
   let w = document.getElementById("nav").style.display;
   console.log(w);
@@ -52,6 +43,47 @@ document.getElementById("upload-form").addEventListener("submit", async (e) => {
   console.log("Upload triggered:", file.name);
   document.getElementById("upload-form").reset();
 });
+
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+// Highlight the drop zone on drag
+dropZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropZone.style.backgroundColor = "#f0f0f0";
+});
+
+// Remove highlight when drag leaves
+dropZone.addEventListener("dragleave", () => {
+  dropZone.style.backgroundColor = "";
+});
+
+// Handle file drop
+dropZone.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  dropZone.style.backgroundColor = "";
+
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+
+  // Optional: also show it in the file input
+  fileInput.files = e.dataTransfer.files;
+
+  // const arrayBuffer = await file.arrayBuffer();
+  // const uint8Array = new Uint8Array(arrayBuffer);
+
+  // await window.api.uploadFile({
+  //   name: file.name,
+  //   type: file.type,
+  //   buffer: uint8Array,
+  // });
+
+  // console.log("Upload triggered via drag:", file.name);
+
+  // // Reset form
+  // document.getElementById("upload-form").reset();
+});
+
 
 function ResponseText(prompt) {
   window.api.getData(prompt);
