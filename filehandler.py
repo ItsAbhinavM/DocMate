@@ -1,8 +1,10 @@
 import os
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+# from langchain_community import vectorstores
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 from unstructured.partition.pdf import partition_pdf
 from unstructured.partition.csv import partition_csv
@@ -10,7 +12,12 @@ from unstructured.partition.xlsx import partition_xlsx
 from langchain.schema import Document
 import pandas as pd
 import tempfile
-
+# from sentence_transformers import SentenceTransformer
+# from unstructured.chunking.dispatch import chunk
+# from unstructured.partition.image import partition_image
+from PIL import Image
+import pytesseract
+ 
 UPLOAD_DIR = "uploads"
 VECTOR_DB_DIR = "vectorstore"
 
@@ -74,6 +81,40 @@ def add_pdf_to_vectorstore(pdf_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {pdf_path} added to vector store.")
 
+# def add_image_to_vectorstore(img_path):
+#     print(f"[INFO] Processing {img_path}...")
+def extract_text_from_image(img_path):
+    try:
+        image = Image.open(img_path)
+        text = pytesseract.image_to_string(image)
+        return text.strip()
+    except Exception as e:
+        print(f"[ERROR] Failed to extract text: {e}")
+        return ""
+      
+def add_image_to_vectorstore(img_path):
+    global vectorstore
+    print(f"[INFO] Processing {img_path}...")
+
+    if not os.path.exists(img_path):
+        print(f"[ERROR] Image file not found.")
+    extracted_text=extract_text_from_image(img_path)
+    if not extracted_text:
+        print(f"[WARNING] No text found in image, Skipping")
+
+    doc=Document(page_content=extracted_text,metadata={"Source":os.path.basename(img_path)})
+    splitter= RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=2000)
+    chunks=splitter.split_documents([doc])
+    # embedding= embedding_model.encode(extracted_text)
+
+    if vectorstore is None:
+        print("[INFO] Creating new vector store with image...")
+        vectorstore=FAISS.from_documents(chunks,embedding_model)
+    else:
+        splitter= RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=200)
+
+    vectorstore.save_local(VECTOR_DB_DIR)
+    print(f"[SUCCESS] {img_path} added to vector store.")
 
 def add_xlsx_to_vectorstore(xlsx_path):
     print(f"[INFO] Processing {xlsx_path}...")
@@ -165,6 +206,13 @@ def xlsx_driver():
     else:
         print("[ERROR] File not found.")
 
+def image_driver():
+    file_name = input("Enter the path to the Image: ").strip()
+    if os.path.exists(file_name):
+        add_image_to_vectorstore(file_name)
+    else:
+        print("[ERROR] File not found")
+
 if __name__ == "__main__":
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -175,11 +223,13 @@ if __name__ == "__main__":
         print("3. Upload a XLSX")
         print("4. Search documents")
         print("5. Exit")
+        print("6. Upload an Image")
         choice = input("Choose an option (1/2/3/4): ")
 
         if choice == "1":
             pdf_driver()
-
+        if choice == "6":
+            image_driver()
         elif choice == "2":
             csv_driver()
 
@@ -190,8 +240,11 @@ if __name__ == "__main__":
             question = input("Enter your question: ")
             query_vectorstore(question, k=1, allowed_types=None)
 
+        elif choice == "3":
+            question = input("Enter your question: ")
+            query_vectorstore(question)
         elif choice == "5":
-            print("Exiting.")
+            print("Exiting....")
             break
         else:
             print("Invalid option.")
