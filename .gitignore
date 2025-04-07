@@ -183,3 +183,5 @@ docs/docs/templates
 
 prof
 virtualenv/
+uploads/
+vectorstore/
