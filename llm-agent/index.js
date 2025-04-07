@@ -1,7 +1,9 @@
-const { app, BrowserWindow, session } = require('electron/main')
-const path=require('path')
+const { app, BrowserWindow, session } = require("electron/main");
+const path = require("path");
 
-process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
+process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
+
+const fs = require("fs");
 
 const createWindow = () => {
   const win = new BrowserWindow({
@@ -9,61 +11,57 @@ const createWindow = () => {
     height: 600,
     autoHideMenuBar: true,
     transparent: true,
-    vibrancy:{
-      theme: 'light',
-      effect: 'acrylic',
-      disableOnBlur: true
+    vibrancy: {
+      theme: "light",
+      effect: "acrylic",
+      disableOnBlur: true,
     },
     //frame: false,
-    webPreferences:{
+    webPreferences: {
       enableRemoteModule: true,
       nodeIntegration: true,
       preload: path.join(__dirname, "./preload.js"),
-  }
-	// webPreferences:{
-	// 	preload: 'preload.js'
-	// }
-	
-  })
-
-  win.loadFile('index.html')
-
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media') {
-      callback(true); // Grant media permissions
-    } else {
-      callback(false);
-    }
+    },
+    // webPreferences:{
+    // 	preload: 'preload.js'
+    // }
   });
-  
 
+  win.loadFile("index.html");
 
-
-}
-
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback) => {
+      if (permission === "media") {
+        callback(true); // Grant media permissions
+      } else {
+        callback(false);
+      }
+    },
+  );
+};
 
 app.whenReady().then(() => {
-  createWindow()
+  createWindow();
 
-  app.on('activate', () => {
+  app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-    	createWindow()
+      createWindow();
     }
-  })
-})
+  });
+});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
   }
-})
+});
 
-"use strict"
+("use strict");
 
 //require("./App");
 
 const { ipcMain } = require("electron");
-
+const os = require("os");
 // const getMyFriends = () => {
 // 	return [
 // 		{id: 6030, name: "Twilley"},
@@ -71,7 +69,7 @@ const { ipcMain } = require("electron");
 // 		{id: 5073, name: "Essick"},
 // 		{id: 8886, name: "Marotta"},
 // 		{id: 7416, name: "Banh"}
-// 	];	
+// 	];
 // }
 
 // const sendMessage = (message) => {
@@ -90,9 +88,25 @@ const { ipcMain } = require("electron");
 // 	return getMyFriends();
 // })
 
-ipcMain.on('activate-app', ()=>{
-	console.log('Voice activation succesfull');
-	if(win){
-		win.show();
-	}
-})
+ipcMain.on("activate-app", () => {
+  console.log("Voice activation succesfull");
+  if (win) {
+    win.show();
+  }
+});
+
+ipcMain.on("upload-file", (event, file) => {
+  const docsDir = path.join(os.homedir(), "docs");
+  const docsPath = path.join(docsDir, file.name);
+  if (!fs.existsSync(docsDir)) {
+    fs.mkdirSync(docsDir, { recursive: true });
+    console.log("Created docs folder at:", docsDir);
+  }
+  fs.writeFile(docsPath, Buffer.from(file.buffer), (err) => {
+    if (err) {
+      console.error("Failed to save file:", err);
+    } else {
+      console.log("File saved to:", docsPath);
+    }
+  });
+});
