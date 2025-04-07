@@ -185,3 +185,6 @@ prof
 virtualenv/
 uploads/
 vectorstore/
+
+# assets
+orchestrator/Media/
