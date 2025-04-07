@@ -1,0 +1,24 @@
+from pprint import pprint
+from pathlib import Path
+from langchain_community.vectorstores import Qdrant
+from langchain_community.document_loaders import JSONLoader
+from langchain_community.embeddings import HuggingFaceEmbeddings
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+loader = JSONLoader(
+    file_path='./contacts.json',
+    jq_schema='.contacts[]',
+    text_content=False)
+
+data = loader.load()
+pprint(data)
+qdrant = Qdrant.from_documents(
+    data,
+    embeddings,
+    location=":memory:",  # Local mode with in-memory storage only
+    collection_name="my_documents",
+)
+
+query = "send me a message about lasagna"
+found_docs = qdrant.similarity_search(query)
+print(found_docs[0].page_content["id"])
