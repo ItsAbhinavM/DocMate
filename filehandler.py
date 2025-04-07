@@ -11,6 +11,7 @@ from unstructured.partition.csv import partition_csv
 from unstructured.partition.xlsx import partition_xlsx
 from unstructured.partition.doc import partition_doc
 from langchain.schema import Document
+from unstructured.partition.docx import partition_docx
 import pandas as pd
 import tempfile
 # from sentence_transformers import SentenceTransformer
@@ -18,7 +19,7 @@ import tempfile
 # from unstructured.partition.image import partition_image
 from PIL import Image
 import pytesseract
- 
+
 UPLOAD_DIR = "uploads"
 VECTOR_DB_DIR = "vectorstore"
 
@@ -92,7 +93,7 @@ def extract_text_from_image(img_path):
     except Exception as e:
         print(f"[ERROR] Failed to extract text: {e}")
         return ""
-      
+
 def add_image_to_vectorstore(img_path):
     global vectorstore
     print(f"[INFO] Processing {img_path}...")
@@ -164,6 +165,31 @@ def add_doc_to_vectorstore(doc_path):
 
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {doc_path} added to vector store.")
+
+def add_docx_to_vectorstore(docx_path):
+    print(f"[INFO] Processing {docx_path}...")
+    elements = partition_docx(filename=docx_path)
+    documents=[]
+    for element in elements:
+            if element.text.strip():
+                metadata = {
+                    "source": os.path.basename(docx_path),
+                    "element_type": element.category,
+                    "page_number": element.metadata.page_number if element.metadata else None
+                }
+                documents.append(Document(page_content=element.text, metadata=metadata))
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    global vectorstore
+    if vectorstore is None:
+        print("[INFO] Creating new vector store...")
+        vectorstore = FAISS.from_documents(chunks, embedding_model)
+    else:
+        vectorstore.add_documents(chunks)
+
+    vectorstore.save_local(VECTOR_DB_DIR)
+    print(f"[SUCCESS] {docx_path} added to vector store.")
 
 def add_csv_to_vectorstore(csv_path):
     print(f"[INFO] Processing {csv_path}...")
@@ -244,6 +270,14 @@ def doc_driver():
         add_doc_to_vectorstore(file_name)
     else:
         print("[ERROR] File not found.")
+
+def docx_driver():
+    file_name = input("Enter the path to the DOC: ").strip()
+    if os.path.exists(file_name):
+        add_doc_to_vectorstore(file_name)
+    else:
+        print("[ERROR] File not found.")
+
 
 if __name__ == "__main__":
     os.makedirs(UPLOAD_DIR, exist_ok=True)
