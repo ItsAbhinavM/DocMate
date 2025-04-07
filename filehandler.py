@@ -12,6 +12,7 @@ from unstructured.partition.xlsx import partition_xlsx
 from unstructured.partition.doc import partition_doc
 from langchain.schema import Document
 from unstructured.partition.docx import partition_docx
+from unstructured.partition.image import partition_image
 import pandas as pd
 import tempfile
 # from sentence_transformers import SentenceTransformer
@@ -104,20 +105,26 @@ def add_image_to_vectorstore(img_path):
     if not extracted_text:
         print(f"[WARNING] No text found in image, Skipping")
 
-    doc=Document(page_content=extracted_text,metadata={"Source":os.path.basename(img_path)})
-    splitter= RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=2000)
-    chunks=splitter.split_documents([doc])
-    # embedding= embedding_model.encode(extracted_text)
+    elements = partition_image(filename=img_path)
+    documents=[]
+    for element in elements:
+            if element.text.strip():
+                metadata = {
+                    "source": os.path.basename(img_path),
+                }
+                documents.append(Document(page_content=element.text, metadata=metadata))
 
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    chunks = splitter.split_documents(documents)
+    global vectorstore
     if vectorstore is None:
-        print("[INFO] Creating new vector store with image...")
-        vectorstore=FAISS.from_documents(chunks,embedding_model)
+        print("[INFO] Creating new vector store...")
+        vectorstore = FAISS.from_documents(chunks, embedding_model)
     else:
-        splitter= RecursiveCharacterTextSplitter(chunk_size=1000,chunk_overlap=200)
+        vectorstore.add_documents(chunks)
 
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {img_path} added to vector store.")
-
 def add_xlsx_to_vectorstore(xlsx_path):
     print(f"[INFO] Processing {xlsx_path}...")
     elements = partition_xlsx(filename=xlsx_path)
@@ -305,7 +312,7 @@ if __name__ == "__main__":
             doc_driver()
         elif choice == "6":
             question = input("Enter your question: ")
-            query_vectorstore(question, k=1, allowed_types=None)
+            query_vectorstore(question, k=5, allowed_types=None)
         elif choice == "7":
             print("Exiting....")
         else:
