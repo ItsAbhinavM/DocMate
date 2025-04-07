@@ -4,7 +4,7 @@ from Functions.serial_io.serial_out import serial_out
 from Functions.serial_io.lights import lights_on, lights_off
 from Functions.web_interface.search import custom_search_tool
 from Functions.discord_module.discord_message import discord_messaging
-from Functions.vision.vision import cam_tool
+# from Functions.vision.vision import cam_tool
 
 from dependencies import *
 from models.llm import gemini_pro
@@ -16,7 +16,8 @@ llm.temperature = 0.3
 
 
 # Define the tools to be used by the agent
-tools = [custom_search_tool, discord_messaging, arbitrary_code, serial_in, serial_out, lights_on, lights_off,cam_tool]
+# tools = [custom_search_tool, discord_messaging, arbitrary_code, serial_in, serial_out, lights_on, lights_off,cam_tool]
+tools = [custom_search_tool, discord_messaging, arbitrary_code, serial_in, serial_out, lights_on, lights_off]
 
 
 # Pull the prompt from the hub
