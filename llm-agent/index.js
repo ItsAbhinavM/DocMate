@@ -95,18 +95,18 @@ ipcMain.on("activate-app", () => {
   }
 });
 
-ipcMain.on("upload-file", (event, file) => {
-  const docsDir = path.join(os.homedir(), "docs");
-  const docsPath = path.join(docsDir, file.name);
-  if (!fs.existsSync(docsDir)) {
-    fs.mkdirSync(docsDir, { recursive: true });
-    console.log("Created docs folder at:", docsDir);
-  }
-  fs.writeFile(docsPath, Buffer.from(file.buffer), (err) => {
-    if (err) {
-      console.error("Failed to save file:", err);
-    } else {
-      console.log("File saved to:", docsPath);
-    }
-  });
-});
+// ipcMain.on("upload-file", (event, file) => {
+//   const docsDir = path.join(os.homedir(), "docs");
+//   const docsPath = path.join(docsDir, file.name);
+//   if (!fs.existsSync(docsDir)) {
+//     fs.mkdirSync(docsDir, { recursive: true });
+//     console.log("Created docs folder at:", docsDir);
+//   }
+//   fs.writeFile(docsPath, Buffer.from(file.buffer), (err) => {
+//     if (err) {
+//       console.error("Failed to save file:", err);
+//     } else {
+//       console.log("File saved to:", docsPath);
+//     }
+//   });
+// });

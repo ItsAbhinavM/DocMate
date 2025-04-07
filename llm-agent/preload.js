@@ -82,9 +82,22 @@ contextBridge.exposeInMainWorld("api", {
         document.getElementById("content").appendChild(test);
       });
   },
-  uploadFile: (fileData) => {
-    ipcRenderer.send("upload-file", fileData);
-  },
+  uploadFile: async (fileData) => {
+    const formData = new FormData();
+    formData.append("file", new Blob([fileData.buffer], { type: fileData.type }), fileData.name);
+  
+    try {
+      const response = await fetch("http://localhost:8000/upload_file", {
+        method: "POST",
+        body: formData,
+      });
+  
+      const result = await response.text(); // since your endpoint returns a string URL
+      console.log("Upload result:", result);
+    } catch (err) {
+      console.error("Error uploading file:", err);
+    }
+  }  
 });
 
 window.SpeechRecognition =
