@@ -5,6 +5,7 @@ from typing import Optional
 
 import aiofiles
 from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from agent import graph
@@ -12,6 +13,9 @@ from filehandler import (csv_driver, doc_driver, docx_driver, image_driver,
                          pdf_driver, xlsx_driver)
 
 app = FastAPI()
+app.mount(
+    "/statistics_output", StaticFiles(directory="statistics_output"), name="static"
+)
 active_runs = {}
 
 
@@ -30,6 +34,7 @@ class InvokeResponse(BaseModel):
     status: str  # e.g., "running", "waiting_clarification", "complete", "error"
     message: Optional[str] = None  # e.g., the clarification question
     final_dataset: Optional[list] = None  # Only present on completion
+    image_path: Optional[str] = None
 
 
 class RespondRequest(BaseModel):
@@ -42,6 +47,7 @@ class RespondResponse(BaseModel):
     status: str  # e.g., "running", "complete", "error"
     message: Optional[str] = None
     final_dataset: Optional[list] = None
+    image_path: Optional[str] = None
 
 
 @app.post("/send_prompt")
@@ -92,6 +98,7 @@ async def send_prompt(request: InvokeRequest):
         final_state = graph.get_state(config)
         dataset = final_state.values.get("processed_dataset")
         error = final_state.values.get("error_message")
+        image_path = final_state.values.get("image_path")
 
         if error:
             active_runs[run_id] = {"status": "error", "message": error}
@@ -101,7 +108,10 @@ async def send_prompt(request: InvokeRequest):
         else:
             active_runs[run_id] = {"status": "complete", "dataset": dataset}
             return InvokeResponse(
-                run_id=run_id, status="complete", final_dataset=dataset
+                run_id=run_id,
+                status="complete",
+                final_dataset=dataset,
+                image_path=image_path,
             )
 
     except Exception as e:
@@ -111,6 +121,8 @@ async def send_prompt(request: InvokeRequest):
         raise HTTPException(
             status_code=500, detail=f"Workflow execution error: {str(e)}"
         )
+
+
 @app.get("/document_statistics")
 async def get_statistics():
     """Endpoint to get statistics about the documents in the system."""
@@ -118,27 +130,29 @@ async def get_statistics():
         # Configuration for LangGraph state checkpointing
         run_id = str(uuid.uuid4())
         config = {"configurable": {"thread_id": run_id}}
-        
+
         # Initial minimal state just for statistics
-        initial_state = {"original_query": "generate_statistics", "current_iteration": 0}
-         
+        initial_state = {
+            "original_query": "generate_statistics",
+            "current_iteration": 0,
+        }
+
         stats_result = await graph.acall(
-            inputs=initial_state,
-            config=config,
-            return_only="generate_statistics"
+            inputs=initial_state, config=config, return_only="generate_statistics"
         )
-        
+
         if stats_result.get("error_message"):
             raise HTTPException(status_code=500, detail=stats_result["error_message"])
-            
+
         return {
             "statistics": stats_result["statistics"],
             "image_path": stats_result["image_path"],
-            "visualization": stats_result["visualization"]
+            "visualization": stats_result["visualization"],
         }
     except Exception as e:
         print(f"Error generating statistics: {e}")
         raise HTTPException(status_code=500, detail=f"Statistics error: {str(e)}")
+
 
 @app.post("/respond", response_model=RespondResponse)
 async def respond_to_workflow(request: RespondRequest):

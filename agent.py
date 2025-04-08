@@ -49,7 +49,8 @@ class InterpretedSchema(BaseModel):
         default=None,
     )
     needs_statistics: Optional[bool] = Field(
-        description="If the user needs to see the statistics of the overall datbase"
+        description="If the user needs to see the statistics of the overall database",
+        default=False,
     )
 
 
@@ -83,6 +84,7 @@ class GraphState(TypedDict):
     page_contents: Optional[Dict]
 
     # Output
+    image_path: Optional[str]
     processed_dataset: Optional[List[Dict]]  # Final structured dataset
     retry_count: int
 
@@ -261,6 +263,9 @@ Analyze the query to define:
                 f"🔧 Refinement Plan: {interpreted_output.refinement_instructions}"
             )
 
+        if interpreted_output.needs_statistics:
+            print_info(f"📊 Needs Statistics:{interpreted_output.needs_statistics}")
+
         # Basic validation
         if (
             run_mode == "initial_generation"
@@ -316,7 +321,7 @@ def vector_search_node(state: GraphState):
         print_info(f'🔍 Searching for documents with query: "{retrieval_query}"')
 
         documents = vectorstore.max_marginal_relevance_search(
-            retrieval_query, k=1, fetch_k=50
+            retrieval_query, k=10, fetch_k=50
         )
         if not documents:
             print_warning("No documents found matching the query")
@@ -944,7 +949,7 @@ def generate_statistics_node(state: GraphState):
         plt.tight_layout()
 
         # Save visualization
-        filename = "document_analytics.png"
+        filename = f"document_analytics_{time.strftime("%Y%m%d_%H%M%S")}.png"
         file_path = os.path.join(output_dir, filename)
         plt.savefig(file_path)
         print_success(f"Statistics visualization saved to {file_path}")
@@ -984,9 +989,6 @@ def generate_statistics_node(state: GraphState):
         }
 
         return {
-            "statistics": doc_stats,
-            "summary": summary,
-            "visualization": img_str,
             "image_path": file_path,
             "error_message": None,
         }
@@ -1018,8 +1020,8 @@ def decide_after_interpret(
         print_error("Error occurred during interpretation")
         return "handle_error"
 
-    if state.get("needs_statistics"):
-        print("Decision: Statistics requested. Routing to statistics node")
+    if state.get("interpreted_schema").needs_statistics:
+        print_info("Decision: Statistics requested. Routing to statistics node")
         return "generate_statistics"
 
     if state.get("needs_clarification"):
@@ -1108,20 +1110,6 @@ Respond only with **"yes"** or **"no"**.
     else:
         print_error("Exceeded 3...TERMINATING")
         return "end_error"
-
-
-def decide_after_synthesize(
-    state: GraphState,
-) -> Literal["end_workflow", "generate_statistics"]:
-    """Routes flow after synthesis to either end or generate statistics."""
-    print("--- [Edge: Decide After Synthesize] ---")
-
-    if state.get("needs_statistics", False):
-        print("  Decision: Statistics requested. Routing to statistics node.")
-        return "generate_statistics"
-
-    print("  Decision: Normal workflow complete, ending.")
-    return "end_workflow"
 
 
 # --- Build the Graph ---
