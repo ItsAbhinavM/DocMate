@@ -1,10 +1,9 @@
 // App.jsx - Main component
 import { useState, useRef, useEffect } from 'react';
 // import { invoke } from '@tauri-apps/api/tauri';
-import Logo from "../public/type_1.gif";
+import Logo from "./assets/type_1.gif";
 import ChatForm from './components/ChatForm';
 import AudioRecorder from './components/AudioRecorder';
-import FileUpload from './components/FileUpload';
 import ChatHistory from './components/ChatHistory';
 import NavPanel from './components/NavPanel';
 import './App.css'
@@ -88,7 +87,6 @@ function App() {
           <div className="w-full flex flex-col items-center mb-4">
             <AudioRecorder onTranscription={handleSendMessage} />
             <ChatForm onSendMessage={handleSendMessage} />
-            <FileUpload />
           </div>
         </div>
       </div>
