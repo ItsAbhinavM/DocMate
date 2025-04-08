@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict, Literal
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -38,6 +38,10 @@ class ExtractedItem(BaseModel):
         default=None,
     )
 
+class DatasetAssessment(BaseModel):
+    """Represents the decision made by the quality control regarding the next node used"""
+    decision: Literal["good_schema", "re_retrieve", "revise_schema", "enrich_data"]
+    reason: str
 
 # --- Define the State for the Graph ---
 class GraphState(TypedDict):
@@ -123,56 +127,72 @@ from langchain_core.output_parsers import StrOutputParser
 
 def check_synthesized_dataset_node(state: GraphState):
     retry_count = state.get("retry_count", 0)
-    if retry_count < 3:    
+    if retry_count < 3:
         print("--- [Node: Check Synthesized Dataset Quality] ---")
         synthesized = state.get("synthesized_dataset", [])
         original_query = state.get("original_query", "")
 
         if not synthesized:
             print("[WARN] Synthesized dataset is empty.")
-            return "retry_schema"
+            return "re_retrieve"
+
+        parser = PydanticOutputParser(pydantic_object=DatasetAssessment)
 
         prompt = PromptTemplate(
             template="""
-    You are a data quality evaluator.
+You are a dataset quality and workflow advisor.
 
-    The user asked: "{original_query}"
+The user asked: "{original_query}"
 
-    The following dataset was synthesized from document extraction:
+The synthesized dataset is:
+{synthesized_dataset}
 
-    {synthesized_dataset}
+Your tasks:
+1. Evaluate the dataset for relevance, completeness, duplication, and clarity.
+2. Decide what the system should do next:
+    - "good_schema": Data is good and ready.
+    - "re_retrieve": Data is incomplete, suggest retrieving new or more focused documents.
+    - "revise_schema": Schema might be incorrect or misaligned with intent.
+    - "enrich_data": Need more context or related information to fill in gaps.
 
-    Evaluate this dataset on:
-    - Relevance to the user query
-    - Presence of duplicate or redundant entries
-    - Completeness and clarity
+3. Provide a short reason for your recommendation (max 2 sentences).
 
-    Is this a good final dataset for the user's intent?
-    Respond with a single word: "yes" or "no".
-    """,
-            input_variables=["original_query", "synthesized_dataset"]
+Respond in JSON format like:
+{format_instructions}
+""",
+            input_variables=["original_query", "synthesized_dataset"],
+            partial_variables = {"format_instructions": parser.get_format_instructions()}
         )
 
         chain = prompt | llm | StrOutputParser()
 
         try:
-            decision = chain.invoke({
+            raw_response = chain.invoke({
                 "original_query": original_query,
                 "synthesized_dataset": json.dumps(synthesized, indent=2)
-            }).strip().lower()
+            }).strip()
+            print("[Evaluation Output]")
+            print(raw_response)
 
-            if "yes" in decision:
-                print("[GOOD FINAL DATASET]")
-                return "good_schema"
-            else:
-                print("[BAD FINAL DATASET]")
-                return "retry_schema"
+            try:
+                result = json.loads(raw_response)
+                decision = result.get("decision", "").lower()
+                reason = result.get("reason", "")
+
+                print(f"[Decision]: {decision} — Reason: {reason}")
+                if decision in {"good_schema", "re_retrieve", "revise_schema", "enrich_data"}:
+                    print("--------------------[DECISION HERE]--------------------")
+                    return decision
+                else:
+                    return "revise_schema"  # Default fallback
+            except json.JSONDecodeError:
+                print("[ERROR] LLM response was not valid JSON")
+                return "revise_schema"
         except Exception as e:
             print(f"[ERROR] Failed to check synthesized dataset: {e}")
-            return "retry_schema"
-
+            return "revise_schema"
     else:
-        print("Exceeded 3...TERMINATING")
+        print("Retry count exceeded. Ending.")
         return "end"
 
 
@@ -394,19 +414,16 @@ workflow.add_conditional_edges(
     {"continue": "synthesize_dataset", "end_error": "error_node"},
 )
 
-# workflow.add_conditional_edges(
-#     "extract_data",
-#     should_continue,
-#     {"continue": "check_schema_success", "end_error": "error_node"},
-# )
 
 workflow.add_conditional_edges(
     "synthesize_dataset",
     check_synthesized_dataset_node,
     {
-        "retry_schema": "re_interpret_query",
-        "end": END,
+        "re_retrieve": "retrieve_documents",
+        "revise_schema": "re_interpret_query",
+        "enrich_data": "retrieve_documents",  # Or a separate node for additional enrichment
         "good_schema": END,
+        "end": END,
     },
 )
 
@@ -414,9 +431,11 @@ workflow.add_conditional_edges(
     "re_interpret_query",
     check_synthesized_dataset_node,
     {
-        "retry_schema": "re_interpret_query",
-        "end": END,
+        "re_retrieve": "retrieve_documents",
+        "revise_schema": "re_interpret_query",
+        "enrich_data": "retrieve_documents",  # Or a separate node for additional enrichment
         "good_schema": END,
+        "end": END,
     },
 )
 
@@ -432,12 +451,12 @@ if __name__ == "__main__":
     print("\n--- Running Sample Workflow ---")
 
     # 1. User Query Input:
-    initial_state = {"original_query": "What is my name"}
+    initial_state = {"original_query": "Who am I"}
     print(f"Initial Query: {initial_state['original_query']}")
 
     # 2. Run the Graph:
     final_state = graph.invoke(
-        initial_state, {"recursion_limit": 10}
+        initial_state, {"recursion_limit": 30}
     )  # Add recursion limit
 
     # 4. Final Output:
