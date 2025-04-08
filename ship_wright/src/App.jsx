@@ -13,6 +13,7 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [showNav, setShowNav] = useState(true);
   const contentRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const addMessage = (messageContent, isUser, url = null) => {
     setMessages(prev => [
@@ -28,6 +29,7 @@ function App() {
 
   const handleSendMessage = async (text) => {
     if (!text.trim()) return;
+    setIsLoading(true)
 
     addMessage(text, true);
 
@@ -43,6 +45,8 @@ function App() {
 
       const data = response.data;
       console.log("here is the data btw", data);
+
+      setIsLoading(false)
 
       if (data.status === "waiting_clarification") {
         addMessage(data.message, false, data.url);
@@ -103,6 +107,11 @@ function App() {
           
           <div className="flex-1 w-full max-w-4xl px-4 overflow-y-auto" ref={contentRef}>
             <ChatHistory messages={messages} />
+            <div className={`flex space-x-1 ${isLoading?"ml-[5vw]":"hidden"}`}>
+              <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-white rounded-full animate-bounce delay-150" />
+              <div className="w-2 h-2 bg-white rounded-full animate-bounce delay-300" />
+            </div>
           </div>
           
           <div className="w-full flex flex-col items-center mb-4">
