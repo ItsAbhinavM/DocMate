@@ -30,8 +30,11 @@ try:
     vectorstore = FAISS.load_local(
         VECTOR_DB_DIR, embedding_model, allow_dangerous_deserialization=True
     )
-except:
+except Exception as e:
+    print(e)
+    print("error")
     vectorstore = None
+print("vectorstore is", vectorstore)
 
 
 def clean_csv(csv_path):
@@ -120,7 +123,7 @@ def add_pdf_to_vectorstore(pdf_path):
             }
             documents.append(Document(page_content=element.text, metadata=metadata))
 
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=2500, chunk_overlap=50)
     chunks = splitter.split_documents(documents)
     global vectorstore
     if vectorstore is None:
@@ -315,6 +318,7 @@ def pdf_driver(file_path):
     else:
         print("[ERROR] File not found.")
 
+
 def csv_driver(file_path):
     if os.path.exists(file_path):
         print("added to verctorstore csv")
@@ -355,34 +359,34 @@ def docx_driver(file_path):
         print("[ERROR] File not found.")
 
 
-# if __name__ == "__main__":
-#     os.makedirs(UPLOAD_DIR, exist_ok=True)
+if __name__ == "__main__":
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-#     while True:
-#         print("\nOptions:")
-#         print("1. Upload a PDF")
-#         print("2. Upload a CSV")
-#         print("3. Upload a XLSX")
-#         print("4  Upload a Doc")
-#         print("5. Upload an Image")
-#         print("6. Search documents")
-#         print("7. Exit")
-#         choice = input("Choose an option (1/2/3/4): ")
+    while True:
+        print("\nOptions:")
+        print("1. Upload a PDF")
+        print("2. Upload a CSV")
+        print("3. Upload a XLSX")
+        print("4  Upload a Doc")
+        print("5. Upload an Image")
+        print("6. Search documents")
+        print("7. Exit")
+        choice = input("Choose an option (1/2/3/4): ")
 
-#         if choice == "1":
-#             pdf_driver()
-#         if choice == "5":
-#             image_driver()
-#         elif choice == "2":
-#             csv_driver()
-#         elif choice == "3":
-#             xlsx_driver()
-#         elif choice == "4":
-#             doc_driver()
-#         elif choice == "6":
-#             question = input("Enter your question: ")
-#             query_vectorstore(question, k=5, allowed_types=None)
-#         elif choice == "7":
-#             print("Exiting....")
-#         else:
-#             print("Invalid option.")
+        if choice == "1":
+            pdf_driver("uploads/hridgsoc.pdf")
+        if choice == "5":
+            image_driver()
+        elif choice == "2":
+            csv_driver()
+        elif choice == "3":
+            xlsx_driver()
+        elif choice == "4":
+            doc_driver()
+        elif choice == "6":
+            question = input("Enter your question: ")
+            print(query_vectorstore(question, k=5, allowed_types=None))
+        elif choice == "7":
+            print("Exiting....")
+        else:
+            print("Invalid option.")
