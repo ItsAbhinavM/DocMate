@@ -57,38 +57,52 @@ def load_or_create_vectorstore():
         return None
 
 def get_document_stats():
-    """Gather statistics about documents in the vector store."""
     import os
     import glob
-    
-    # Sample statistics structure
+    from unstructured.partition.auto import partition
+    from unstructured.partition.pdf import partition_pdf
+    import numpy as np
+
+    upload_dir = "uploads/"
     stats = {
         "total_docs": 0,
         "doc_types": {},
         "token_counts": [],
         "avg_tokens_per_doc": 0,
-        "total_tokens": 0
+        "total_tokens": 0,
+        "documents": []  # Added full list of docs with details
     }
-    
-    # Count documents in uploads directory
-    upload_dir = "uploads/"
-    if os.path.exists(upload_dir):
-        for ext in [".pdf", ".csv", ".xlsx", ".doc", ".docx", ".txt"]:
-            count = len(glob.glob(os.path.join(upload_dir, f"*{ext}")))
-            if count > 0:
-                stats["doc_types"][ext] = count
-                stats["total_docs"] += count
-    
-    # Generate sample token counts
-    import numpy as np
+
+    if not os.path.exists(upload_dir):
+        return stats
+
+    supported_exts = [".pdf", ".csv", ".xlsx", ".doc", ".docx", ".txt", ".png", ".jpg", ".jpeg"]
+    all_files = [f for ext in supported_exts for f in glob.glob(os.path.join(upload_dir, f"*{ext}"))]
+
+    for filepath in all_files:
+        ext = os.path.splitext(filepath)[1].lower()
+        stats["doc_types"][ext] = stats["doc_types"].get(ext, 0) + 1
+        stats["total_docs"] += 1
+
+        try:
+            elements = partition(filename=filepath)
+            token_count = sum(len(el.text.split()) for el in elements if el.text)
+        except Exception:
+            token_count = 0  # if parsing fails, treat as 0 tokens
+
+        stats["token_counts"].append(token_count)
+        stats["total_tokens"] += token_count
+        stats["documents"].append({
+            "name": os.path.basename(filepath),
+            "path": filepath,
+            "type": ext,
+            "tokens": token_count,
+            "structured": ext in [".csv", ".xlsx"],
+        })
+
     if stats["total_docs"] > 0:
-        stats["token_counts"] = np.random.normal(500, 200, stats["total_docs"]).tolist()
-        stats["total_tokens"] = sum(stats["token_counts"])
         stats["avg_tokens_per_doc"] = stats["total_tokens"] / stats["total_docs"]
-    else:
-        # Add some sample data if no documents found
-        stats["token_counts"] = [0]
-    
+
     return stats
 
 def add_pdf_to_vectorstore(pdf_path):

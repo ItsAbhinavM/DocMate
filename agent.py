@@ -273,56 +273,82 @@ def synthesize_dataset_node(state: GraphState):
 def generate_statistics_node(state: GraphState):
     """Generates statistics about the available documents."""
     print("--- [Node: Generate Statistics] ---")
-    
+
     import numpy as np
     import matplotlib.pyplot as plt
     import io
     import base64
+    import os
     from filehandler import get_document_stats
-    
+
     try:
-        # Get statistics from your documents
         doc_stats = get_document_stats()
-        
-        # Create some visualizations
-        plt.figure(figsize=(10, 6))
-        
-        # Document count by type
-        plt.subplot(1, 2, 1)
-        doc_types = [key for key in doc_stats['doc_types'].keys()]
-        counts = [value for value in doc_stats['doc_types'].values()]
-        plt.bar(doc_types, counts)
-        plt.title('Document Count by Type')
+        documents = doc_stats["documents"]
+
+        if not documents:
+            raise ValueError("No documents found.")
+
+        structured_counts = sum(1 for doc in documents if doc["structured"])
+        unstructured_counts = doc_stats["total_docs"] - structured_counts
+
+        token_counts_by_type = {}
+        for doc in documents:
+            token_counts_by_type.setdefault(doc["type"], []).append(doc["tokens"])
+
+        total_token_by_type = {k: sum(v) for k, v in token_counts_by_type.items()}
+        top_heavy_docs = sorted(documents, key=lambda d: d["tokens"], reverse=True)[:5]
+
+        plt.figure(figsize=(15, 5))
+
+        # 1. Structured vs Unstructured Pie
+        plt.subplot(1, 3, 1)
+        plt.pie(
+            [structured_counts, unstructured_counts],
+            labels=["Structured", "Unstructured"],
+            autopct="%1.1f%%",
+            startangle=140
+        )
+        plt.title("Structured vs Unstructured Documents")
+
+        # 2. Token Load by Type
+        plt.subplot(1, 3, 2)
+        plt.bar(total_token_by_type.keys(), total_token_by_type.values())
+        plt.title("Total Tokens by Document Type")
         plt.xticks(rotation=45)
-        
-        # Token distribution
-        plt.subplot(1, 2, 2)
-        plt.hist(doc_stats['token_counts'], bins=10)
-        plt.title('Token Count Distribution')
-        
-        # Save plot to bytes
-        buf = io.BytesIO()
+
+        # 3. Top 5 Heavy Docs
+        plt.subplot(1, 3, 3)
+        names = [doc["name"] for doc in top_heavy_docs]
+        tokens = [doc["tokens"] for doc in top_heavy_docs]
+        plt.barh(names, tokens)
+        plt.title("Top 5 Longest Documents")
+
         plt.tight_layout()
-        output_dir="statistics_output"
+        output_dir = "statistics_output"
+        os.makedirs(output_dir, exist_ok=True)
         filename = "analytics_dashboard.png"
         file_path = os.path.join(output_dir, filename)
         plt.savefig(file_path)
-        print("Image has been saved successfully")
+        print("Image has been saved successfully.")
+
+        # Convert to base64 for visualization in frontend (optional)
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
         buf.seek(0)
-        
-        # Convert to base64 for easy transmission
         img_str = base64.b64encode(buf.read()).decode('utf-8')
-        
         plt.close()
-        
+
         return {
             "statistics": doc_stats,
             "visualization": img_str,
+            "image_path": file_path,
             "error_message": None
         }
+
     except Exception as e:
         print(f"[ERROR] Failed to generate statistics: {e}")
         return {"error_message": f"Failed to generate statistics: {str(e)}"}
+
 
 # -- Functions for conditional edges --
 def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
