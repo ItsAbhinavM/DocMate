@@ -4,7 +4,9 @@ from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_core.output_parsers import PydanticOutputParser, StrOutputParser
+from langchain_core.output_parsers import (JsonOutputParser,
+                                           PydanticOutputParser,
+                                           StrOutputParser)
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
@@ -23,11 +25,16 @@ class InterpretedSchema(BaseModel):
     schema_description: Dict[str, str] = Field(
         description="A dictionary where keys are column names and values are descriptions of the data expected in that column."
     )
-    retrieval_query: str = Field(
+    retrieval_query: Optional[str] = Field(
         description="Optimized query string for vector similarity search based on the user request."
     )
     ambiguity: Optional[str] = Field(
-        description="If the user query is too vague or could be interpreted in multiple ways request explain briefly why clarification is needed"
+        description="If the user query is too vague or could be interpreted in multiple ways request explain briefly why clarification is needed",
+        default=None,
+    )
+    refinement_instructions: Optional[str] = Field(
+        description="If refining, specific instructions derived from the query on how to modify the previous dataset (e.g., 'filter out entries where status is closed', 'add currency symbol'). Null for initial generation.",
+        default=None,
     )
     needs_statistics: Optional[bool]= Field(
             description="If the user needs to see the statistics of the overall datbase"
@@ -48,12 +55,16 @@ class ExtractedItem(BaseModel):
 
 # --- Define the State for the Graph ---
 class GraphState(TypedDict):
+    # Inputs
     original_query: str
+    run_mode: Literal["initial_generation", "refinement"]
+    previous_dataset: Optional[List[Dict]]  # Loaded by caller for refinement
+
+    # Tracking / Intermediate
     current_query: Optional[str]  # Query from a clarification event
     interpreted_schema: Optional[InterpretedSchema]
     retrieved_docs: Optional[List[Document]]  # Docs from vectorstore
     extracted_data_points: List[ExtractedItem]  # List of raw extractions
-    synthesized_dataset: Optional[List[Dict]]  # Final structured dataset
     error_message: Optional[str]
     needs_clarification: Optional[bool]
     current_iteration: int
@@ -68,64 +79,89 @@ def root_node(state: GraphState):
     """Agent start point, increments the iteration count on each loop"""
     iteration = state.get("current_iteration", 0) + 1
     print(f"--- [Node: Increment Iteration] --- (Starting Iteration {iteration})")
-    return {"current_iteration": iteration}
+    return {
+        "current_iteration": iteration,
+        "error_message": None,  # Clear previous errors on loop/restart
+        "needs_clarification": False,  # Default to no clarification needed
+    }
 
 
 def interpret_query_node(state: GraphState):
     """Interprets the user query to define schema and retrieval query."""
     print("--- [Node: Interpret Query] ---")
     user_query = state.get("current_query") or state["original_query"]
-    # if any(keyword in user_query.lower() for keyword in ["statistics", "stats", "show stats", "show statistics"]):
-    #     print("Statistics request detected")
-    #     return {
-    #         "needs_statistics": True,
-    #         "needs_clarification": False,
-    #         "error_message": None
-    #     }
+    run_mode = state["run_mode"]
 
     parser = PydanticOutputParser(pydantic_object=InterpretedSchema)
 
-    prompt = PromptTemplate(
-        template="""Analyze the user's query to define a structured dataset schema and a concise search query.
-User Query: {query}
+    template = """Analyze the user's query based on the specified run mode to define a structured dataset schema, a search query (if needed), and refinement instructions (if applicable).
 
-Based on the query, define:
-1.  `schema_description`: A dictionary describing the columns/fields the user wants in their dataset. Keys should be concise field names, values should be clear descriptions.
-2.  `retrieval_query`: A query string optimized for finding relevant documents/chunks in a vector database related to the user's request. Focus on key entities, actions, and concepts.
-3.  `ambiguity`: briefly explain *why* (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, leave as null.
-4. `needs_statistics`: Set to true if the user is requesting statistics or analysis about the document collection itself, rather than data extraction. For example, requests like "show me statistics of the documents", "how many PDFs do we have?", or "what's the average document length?" would set this to true.
-{format_instructions}
-""",
-        input_variables=["query"],
+Run Mode: {run_mode}
+User Query: {query}
+"""
+
+    if run_mode == "refinement":
+        template += """The user wants to refine a dataset generated previously.
+Analyze the query to determine:
+1.  `schema_description`: The schema of the *final* dataset after refinement. This might be the same as the old schema or modified by the request. Keys = concise field names, values = clear descriptions.
+2.  `retrieval_query`: A query for vector search *only if* the refinement requires fetching *new* information from documents. If the refinement only involves filtering/modifying the *existing* data (passed separately), this should be null.
+3.  `refinement_instructions`: A clear, actionable instruction for a downstream process describing *how* to modify the previous dataset based on the user's query AND any newly extracted data (if retrieval_query is not null). Examples: "Filter previous data to keep only entries with status='active'", "Merge new data points, prioritizing newer sources for conflicting values", "Add a 'category' field based on the 'description'". If the query implies replacing the dataset entirely with new data, state that.
+4.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Refinement target unclear", "Filter criteria ambiguous"). Otherwise, null.
+"""
+
+    else:  # initial_generation
+        template += """The user wants to generate a dataset from scratch.
+Analyze the query to define:
+1.  `schema_description`: A dictionary describing the columns/fields for the new dataset. Keys = concise field names, values = clear descriptions.
+2.  `retrieval_query`: A query string optimized for finding relevant documents in a vector database. Focus on key entities, actions, and concepts. This should *not* be null for initial generation unless the query is completely nonsensical.
+3.  `refinement_instructions`: Should be null for initial generation.
+4.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, null.
+"""
+
+    template += "\n{format_instructions}\n"
+
+    prompt = PromptTemplate(
+        template=template,
+        input_variables=["query", "run_mode"],
         partial_variables={"format_instructions": parser.get_format_instructions()},
     )
 
     chain = prompt | llm | parser
     try:
-        interpreted_output = chain.invoke({"query": user_query})
+        interpreted_output = chain.invoke({"query": user_query, "run_mode": run_mode})
         print(f"Ambiguity: {interpreted_output.ambiguity}")
         print(f"Interpreted Schema: {interpreted_output.schema_description}")
-        print(f"Retrieval Query: {interpreted_output.retrieval_query}")
+        print(
+            f"  Refinement Instructions: {interpreted_output.refinement_instructions}"
+        )
         print(f"Retrieval Query: {interpreted_output.retrieval_query}")
 
-        if interpreted_output.needs_statistics:
-            return {
-                    "interpreted_schema":interpreted_output,
-                    "needs_statistics":True,
-                    "needs_clarification":False,
-                    "error_message":None,
-                    }
+        # Basic validation
+        if (
+            run_mode == "initial_generation"
+            and not interpreted_output.retrieval_query
+            and not interpreted_output.ambiguity
+        ):
+            print(
+                "[WARN] Initial generation mode but no retrieval query was generated. Setting ambiguity."
+            )
+            interpreted_output.ambiguity = (
+                "Initial generation requires a search query, but none could be derived."
+            )
 
-        if interpreted_output.ambiguity:
-            return {
-                "interpreted_schema": interpreted_output,
-                "needs_clarification": True,
-                "error_message": None,
-            }
+        needs_clarification = bool(interpreted_output.ambiguity)
+
         return {
             "interpreted_schema": interpreted_output,
-            "needs_clarification": False,
+            "needs_clarification": needs_clarification,
             "error_message": None,
+            # Clear potentially outdated fields from previous loops if clarification happened
+            "retrieved_docs": (
+                None if needs_clarification else state.get("retrieved_docs")
+            ),
+            "extracted_data_points": (
+                [] if needs_clarification else state.get("extracted_data_points", [])
+            ),
         }
     except Exception as e:
         print(f"[ERROR] Failed to interpret query: {e}")
@@ -198,7 +234,7 @@ Extracted Data (JSON):
 """
     extraction_prompt = PromptTemplate.from_template(extraction_prompt_template)
 
-    extraction_chain = extraction_prompt | llm | StrOutputParser()
+    extraction_chain = extraction_prompt | llm | JsonOutputParser()
 
     extracted_items: List[ExtractedItem] = []
 
@@ -214,11 +250,10 @@ Extracted Data (JSON):
                 "schema_description": schema_desc_string,
                 "document_content": doc.page_content.strip(),
             }
-            extracted_json_str = extraction_chain.invoke(input_data)
+            extracted_data = extraction_chain.invoke(input_data)
 
             # Attempt to parse the JSON output
             try:
-                extracted_data = json.loads(extracted_json_str)
                 # Handle both single object and list of objects responses
                 if isinstance(extracted_data, dict) and extracted_data:
                     item = ExtractedItem(
@@ -248,27 +283,113 @@ Extracted Data (JSON):
     return {"extracted_data_points": extracted_items, "error_message": None}
 
 
-def synthesize_dataset_node(state: GraphState):
-    """Synthesizes the final dataset from extracted data points."""
-    print("--- [Node: Synthesize Dataset] ---")
+def process_data_node(state: GraphState):
+
+    print("--- [Node: Process Data] ---")
     if state.get("error_message"):
         return {}
 
-    extracted_items = state.get("extracted_data_points", [])
-    if not extracted_items:
-        print("No data points were extracted, resulting dataset is empty.")
-        return {"synthesized_dataset": []}
+    run_mode = state["run_mode"]
+    newly_extracted_points = state.get("extracted_data_points", [])  # From current run
+    previous_dataset = state.get("processed_dataset", [])
+    target_schema = state.get("interpreted_schema").schema_description
+    refinement_instructions = state.get(
+        "interpreted_schema", {}
+    ).refinement_instructions
 
-    # Basic synthesis: Just collect the data dictionaries.
-    # More advanced synthesis could involve:
-    # 1. Deduplication: Identify and merge records referring to the same real-world entity.
-    # 2. Conflict Resolution: If multiple documents provide different values for the same field (e.g., different total amounts for the same invoice), apply a rule (e.g., majority vote, latest source, flag for review).
-    # 3. Aggregation: Combine information from different documents for the same entity.
+    processed_dataset: List[Dict] = []
 
-    final_dataset = [item.data for item in extracted_items]  # Simple collection for now
+    if run_mode == "initial_generation":
+        print("  Mode: Initial Generation - Creating dataset from extracted points.")
+        # Basic synthesis: collect data dictionaries
+        processed_dataset = [item.data for item in newly_extracted_points]
+        print(f"  Synthesized dataset with {len(processed_dataset)} records.")
 
-    print(f"Synthesized dataset with {len(final_dataset)} records.")
-    return {"synthesized_dataset": final_dataset, "error_message": None}
+    elif run_mode == "refinement":
+        print("  Mode: Refinement - Applying changes to previous dataset.")
+        if not previous_dataset:
+            print(
+                "  [WARN] Refinement mode, but no previous dataset was provided. Using only newly extracted points."
+            )
+            processed_dataset = [item.data for item in newly_extracted_points]
+        else:
+            print(f"  Newly extracted points: {len(newly_extracted_points)}")
+            print(f"  Refinement Instructions: {refinement_instructions}")
+
+            refinement_prompt_template = """You are a data refinement assistant.
+**Your Goal:** Refine a dataset based on user instructions, using any provided new data. Output a single JSON list of records that strictly follows the target schema.
+
+**Inputs:**
+
+--- Previous Dataset ---
+{previous_dataset}
+--- End Previous Dataset ---
+
+--- Newly Extracted Data ---
+{new_data}
+--- End Newly Extracted Data ---
+
+--- Target Schema ---
+{target_schema}
+--- End Target Schema ---
+
+--- Refinement Instructions ---
+{instructions}
+--- End Refinement Instructions ---
+
+**Guidelines:**
+
+1. **Follow Instructions First:** Treat the instructions as your primary guide.
+2. **Use Previous Dataset:** Start from it unless told to discard or replace.
+3. **Integrate New Data:** Append, update, or merge as instructed. Deduplicate if needed, based on likely unique fields.
+4. **Filter & Transform:** Apply all specified filters and data transformations.
+5. **Match Schema:** Each record must:
+   - Contain only keys in the target schema.
+   - Include all required keys (use `null` if missing).
+6. **Edge Cases:**
+   - If both datasets are empty, return `[]`.
+   - If one is empty, refine the other.
+
+**Output:** Only return the final refined dataset as a valid JSON list. Do not use thriple backtick return the raw json.
+            """
+            refinement_prompt = PromptTemplate.from_template(refinement_prompt_template)
+            refinement_chain = refinement_prompt | llm | JsonOutputParser()
+
+            # Prepare the input dictionary
+            refinement_input = {
+                "previous_dataset": previous_dataset,
+                "new_data": newly_extracted_points,
+                "target_schema": target_schema,
+                "instructions": (
+                    refinement_instructions
+                    if refinement_instructions
+                    else "No specific refinement instructions provided. Merge new data with previous data, ensuring final schema compliance and attempting basic deduplication based on obvious keys."
+                ),  # Provide default if needed
+            }
+
+            try:
+                print("Calling LLM for refinement processing...")
+                processed_dataset = refinement_chain.invoke(refinement_input)
+                print(f"LLM refinement resulted in {len(processed_dataset)} records.")
+
+            except OutputParserException as e:
+                print(f"  [ERROR] Failed to parse LLM refinement output: {e}")
+                # Log raw output for debugging
+                raw_output = (refinement_prompt | llm | StrOutputParser()).invoke(
+                    refinement_input
+                )
+                print(
+                    f"  Raw LLM Output (Refinement):\n---\n{raw_output[:500]}...\n---"
+                )
+                # Handle error: Maybe return original + new, or fail.
+                processed_dataset = previous_dataset + [
+                    item.data for item in newly_extracted_points
+                ]  # Naive fallback
+                state["error_message"] = (
+                    f"LLM refinement output parsing failed: {e}"  # Propagate soft error
+                )
+
+    return {"processed_dataset": processed_dataset, "error_message": None}
 
 def generate_statistics_node(state: GraphState):
     """Generates statistics about the available documents."""
@@ -391,6 +512,12 @@ def decide_after_interpret(
         )
         return "handle_error"
 
+    if state["run_mode"] == "refinement":
+        print(
+            " Decision: Interpretation successful, refining run detected, proceeding to processing"
+        )
+        return "proceed_to_processing"
+
     print("  Decision: Interpretation successful, proceeding to retrieve documents.")
     return "proceed_to_retrieve"
 
@@ -415,8 +542,7 @@ workflow.add_node("root", root_node)
 workflow.add_node("interpret_query", interpret_query_node)
 workflow.add_node("retrieve_documents", retrieve_documents_node)
 workflow.add_node("extract_data", extract_data_node)
-workflow.add_node("synthesize_dataset", synthesize_dataset_node)
-workflow.add_node("generate_statistics",generate_statistics_node)
+workflow.add_node("process_data", process_data_node)
 workflow.add_node(
     "error_node", lambda state: print("Workflow terminated due to error.")
 )
@@ -432,7 +558,7 @@ workflow.add_conditional_edges(
     {
         "loop_for_clarification": "root",
         "proceed_to_retrieve": "retrieve_documents",
-        "generate_statistics": "generate_statistics",
+        "proceed_to_processing": "process_data",
         "end_error": "error_node",
     },
 )
@@ -457,12 +583,12 @@ workflow.add_conditional_edges(
 workflow.add_conditional_edges(
     "extract_data",
     should_continue,
-    {"continue": "synthesize_dataset", "end_error": "error_node"},
+    {"continue": "process_data", "end_error": "error_node"},
 )
 
 
 # Final step
-workflow.add_edge("synthesize_dataset", END)  # Successful completion ends here
+workflow.add_edge("process_data", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
 workflow.add_edge("generate_statistics",END)
 # Compile the graph
@@ -485,11 +611,11 @@ if __name__ == "__main__":
     print("\n--- Workflow Complete ---")
     if final_state.get("error_message"):
         print(f"Workflow failed with error: {final_state['error_message']}")
-    elif final_state.get("synthesized_dataset") is not None:
-        print("Synthesized Dataset:")
+    elif final_state.get("process_data") is not None:
+        print("Final Dataset:")
         # Pretty print the final dataset
-        print(json.dumps(final_state["synthesized_dataset"], indent=2))
-        print(f"\nTotal records generated: {len(final_state['synthesized_dataset'])}")
+        print(json.dumps(final_state["processed_data"], indent=2))
+        print(f"\nTotal records generated: {len(final_state['processed_dataset'])}")
     else:
         print(
             "Workflow finished, but no dataset was generated (e.g., no relevant documents found or data extracted)."
