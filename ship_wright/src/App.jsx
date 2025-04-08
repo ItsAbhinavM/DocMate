@@ -14,6 +14,7 @@ function App() {
   const [showNav, setShowNav] = useState(true);
   const contentRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [runId, setRunId] = useState()
 
   const addMessage = (messageContent, isUser, url = null) => {
     setMessages(prev => [
@@ -32,6 +33,19 @@ function App() {
     setIsLoading(true)
 
     addMessage(text, true);
+  
+    let payload = {}
+    if (runId){
+      payload = {
+        original_query: text,
+        run_id: runId
+      }
+    }else{
+      payload = {
+        original_query: text,
+      }
+    }
+    console.log(payload, "here is payload")
 
     try {
       const response = await axios.post('http://localhost:8000/send_prompt', {
@@ -59,6 +73,9 @@ function App() {
 
         addMessage(<JSONView jsoner={{0:data["final_dataset"]}} />, false);
       }
+
+      console.log("This is the run id", data["run_id"])
+      setRunId(data["run_id"])
 
     } catch (error) {
       console.error('Error sending message:', error);
