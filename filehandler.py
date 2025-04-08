@@ -1,25 +1,22 @@
 import os
+import tempfile
 
+import pandas as pd
+import pytesseract
+from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 # from langchain_community import vectorstores
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
-from unstructured.partition.pdf import partition_pdf
+from PIL import Image
 from unstructured.partition.csv import partition_csv
-from unstructured.partition.xlsx import partition_xlsx
 from unstructured.partition.doc import partition_doc
-from langchain.schema import Document
 from unstructured.partition.docx import partition_docx
 from unstructured.partition.image import partition_image
-import pandas as pd
-import tempfile
-# from sentence_transformers import SentenceTransformer
-# from unstructured.chunking.dispatch import chunk
-# from unstructured.partition.image import partition_image
-from PIL import Image
-import pytesseract
+from unstructured.partition.pdf import partition_pdf
+from unstructured.partition.xlsx import partition_xlsx
 
 UPLOAD_DIR = "uploads"
 VECTOR_DB_DIR = "vectorstore"
@@ -39,14 +36,15 @@ except:
 
 def clean_csv(csv_path):
     try:
-        df = pd.read_csv(csv_path, on_bad_lines='skip')
+        df = pd.read_csv(csv_path, on_bad_lines="skip")
     except Exception as e:
         print(f"[ERROR] Failed to read CSV: {e}")
         return None
 
-    temp_file = tempfile.NamedTemporaryFile(mode='w+', suffix=".csv", delete=False)
+    temp_file = tempfile.NamedTemporaryFile(mode="w+", suffix=".csv", delete=False)
     df.to_csv(temp_file.name, index=False)
     return temp_file.name
+
 
 def load_or_create_vectorstore():
     if os.path.exists(VECTOR_DB_DIR):
@@ -62,15 +60,17 @@ def load_or_create_vectorstore():
 def add_pdf_to_vectorstore(pdf_path):
     print(f"[INFO] Processing {pdf_path}...")
     elements = partition_pdf(filename=pdf_path)
-    documents=[]
+    documents = []
     for element in elements:
-            if element.text.strip():
-                metadata = {
-                    "source": os.path.basename(pdf_path),
-                    "element_type": element.category,
-                    "page_number": element.metadata.page_number if element.metadata else None
-                }
-                documents.append(Document(page_content=element.text, metadata=metadata))
+        if element.text.strip():
+            metadata = {
+                "source": os.path.basename(pdf_path),
+                "element_type": element.category,
+                "page_number": (
+                    element.metadata.page_number if element.metadata else None
+                ),
+            }
+            documents.append(Document(page_content=element.text, metadata=metadata))
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -84,6 +84,7 @@ def add_pdf_to_vectorstore(pdf_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {pdf_path} added to vector store.")
 
+
 # def add_image_to_vectorstore(img_path):
 #     print(f"[INFO] Processing {img_path}...")
 def extract_text_from_image(img_path):
@@ -95,24 +96,25 @@ def extract_text_from_image(img_path):
         print(f"[ERROR] Failed to extract text: {e}")
         return ""
 
+
 def add_image_to_vectorstore(img_path):
     global vectorstore
     print(f"[INFO] Processing {img_path}...")
 
     if not os.path.exists(img_path):
         print(f"[ERROR] Image file not found.")
-    extracted_text=extract_text_from_image(img_path)
+    extracted_text = extract_text_from_image(img_path)
     if not extracted_text:
         print(f"[WARNING] No text found in image, Skipping")
 
     elements = partition_image(filename=img_path)
-    documents=[]
+    documents = []
     for element in elements:
-            if element.text.strip():
-                metadata = {
-                    "source": os.path.basename(img_path),
-                }
-                documents.append(Document(page_content=element.text, metadata=metadata))
+        if element.text.strip():
+            metadata = {
+                "source": os.path.basename(img_path),
+            }
+            documents.append(Document(page_content=element.text, metadata=metadata))
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -125,16 +127,18 @@ def add_image_to_vectorstore(img_path):
 
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {img_path} added to vector store.")
+
+
 def add_xlsx_to_vectorstore(xlsx_path):
     print(f"[INFO] Processing {xlsx_path}...")
     elements = partition_xlsx(filename=xlsx_path)
-    documents=[]
+    documents = []
     for element in elements:
-            if element.text.strip():
-                metadata = {
-                    "source": os.path.basename(xlsx_path),
-                }
-                documents.append(Document(page_content=element.text, metadata=metadata))
+        if element.text.strip():
+            metadata = {
+                "source": os.path.basename(xlsx_path),
+            }
+            documents.append(Document(page_content=element.text, metadata=metadata))
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -148,18 +152,21 @@ def add_xlsx_to_vectorstore(xlsx_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {xlsx_path} added to vector store.")
 
+
 def add_doc_to_vectorstore(doc_path):
     print(f"[INFO] Processing {doc_path}...")
     elements = partition_doc(filename=doc_path)
-    documents=[]
+    documents = []
     for element in elements:
-            if element.text.strip():
-                metadata = {
-                    "source": os.path.basename(doc_path),
-                    "element_type": element.category,
-                    "page_number": element.metadata.page_number if element.metadata else None
-                }
-                documents.append(Document(page_content=element.text, metadata=metadata))
+        if element.text.strip():
+            metadata = {
+                "source": os.path.basename(doc_path),
+                "element_type": element.category,
+                "page_number": (
+                    element.metadata.page_number if element.metadata else None
+                ),
+            }
+            documents.append(Document(page_content=element.text, metadata=metadata))
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -173,18 +180,21 @@ def add_doc_to_vectorstore(doc_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {doc_path} added to vector store.")
 
+
 def add_docx_to_vectorstore(docx_path):
     print(f"[INFO] Processing {docx_path}...")
     elements = partition_docx(filename=docx_path)
-    documents=[]
+    documents = []
     for element in elements:
-            if element.text.strip():
-                metadata = {
-                    "source": os.path.basename(docx_path),
-                    "element_type": element.category,
-                    "page_number": element.metadata.page_number if element.metadata else None
-                }
-                documents.append(Document(page_content=element.text, metadata=metadata))
+        if element.text.strip():
+            metadata = {
+                "source": os.path.basename(docx_path),
+                "element_type": element.category,
+                "page_number": (
+                    element.metadata.page_number if element.metadata else None
+                ),
+            }
+            documents.append(Document(page_content=element.text, metadata=metadata))
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -198,20 +208,22 @@ def add_docx_to_vectorstore(docx_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {docx_path} added to vector store.")
 
+
 def add_csv_to_vectorstore(csv_path):
     print(f"[INFO] Processing {csv_path}...")
     cleaned_csv_path = clean_csv(csv_path)
     elements = partition_csv(filename=cleaned_csv_path)
     documents = [
-           Document(
-               page_content=element.text.strip(),
-               metadata={
-                   "source": os.path.basename(csv_path),
-                   "element_type": element.category
-               }
-           )
-           for element in elements if element.text.strip()
-       ]
+        Document(
+            page_content=element.text.strip(),
+            metadata={
+                "source": os.path.basename(csv_path),
+                "element_type": element.category,
+            },
+        )
+        for element in elements
+        if element.text.strip()
+    ]
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_documents(documents)
@@ -232,17 +244,9 @@ def query_vectorstore(question, k=5, allowed_types=None):
         print("[ERROR] No documents have been added to the vector store yet.")
         return
 
-    print(f"[QUERY] {question}")
     results = vectorstore.similarity_search(question, k=k)
+    return results
 
-    if allowed_types:
-        results = [res for res in results if res.metadata.get("element_type") in allowed_types]
-
-    for i, res in enumerate(results):
-        print(
-            f"\n--- Result {i+1} (Page: {res.metadata.get('page_number')}, Type: {res.metadata.get('element_type')}, Source: {res.metadata['source']}) ---\n"
-            f"{res.page_content.strip()[:1000]}\n"
-        )
 
 def pdf_driver():
     file_name = input("Enter the path to the PDF: ").strip()
@@ -251,12 +255,14 @@ def pdf_driver():
     else:
         print("[ERROR] File not found.")
 
+
 def csv_driver():
     file_name = input("Enter the path to the CSV: ").strip()
     if os.path.exists(file_name):
         add_csv_to_vectorstore(file_name)
     else:
         print("[ERROR] File not found.")
+
 
 def xlsx_driver():
     file_name = input("Enter the path to the XLSX: ").strip()
@@ -265,18 +271,22 @@ def xlsx_driver():
     else:
         print("[ERROR] File not found.")
 
+
 def image_driver():
     file_name = input("Enter the path to the Image: ").strip()
     if os.path.exists(file_name):
         add_image_to_vectorstore(file_name)
     else:
         print("[ERROR] File not found")
+
+
 def doc_driver():
     file_name = input("Enter the path to the DOC: ").strip()
     if os.path.exists(file_name):
         add_doc_to_vectorstore(file_name)
     else:
         print("[ERROR] File not found.")
+
 
 def docx_driver():
     file_name = input("Enter the path to the DOC: ").strip()

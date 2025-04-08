@@ -4,7 +4,7 @@ import aiofiles
 from fastapi import FastAPI, Request, UploadFile
 from pydantic import BaseModel
 
-from agent import agent_executor
+from agent import graph
 
 app = FastAPI()
 
@@ -15,13 +15,14 @@ class Prompt(BaseModel):
 
 @app.post("/send_prompt")
 def send_prompt(prompt: Prompt):
-    output = agent_executor.invoke({"input": prompt.content})["output"]
-    if "direct_response" in output:
-        return json.loads(output)
+    initial_state = {"original_query": prompt.content}
+    final_state = graph.invoke(initial_state, {"recursion_limit": 10})
+    if final_state.get("error_message"):
+        return f"Workflow failed with error: {final_state['error_message']}"
+    elif final_state.get("synthesized_dataset") is not None:
+        return json.dumps(final_state["synthesized_dataset"], indent=2)
     else:
-        response = {}
-        response["message"] = output
-        return response
+        return "Workflow finished, but no dataset was generated (e.g., no relevant documents found or data extracted)."
 
 
 @app.post("/file_upload")
