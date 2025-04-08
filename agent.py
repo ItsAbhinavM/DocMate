@@ -84,6 +84,7 @@ class GraphState(TypedDict):
 
     # Output
     processed_dataset: Optional[List[Dict]]  # Final structured dataset
+    retry_count: int
 
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21")
@@ -357,6 +358,132 @@ def retrieve_documents_node(state: GraphState):
     except Exception as e:
         print_error(f"Failed during vector store query: {e}")
         return {"error_message": f"Failed during vector store query: {str(e)}"}
+
+
+# from langchain_core.runnables import Runnable
+from typing import List
+
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+
+# LLM chain that we’ll define below
+# llm_schema_validator: Runnable
+
+
+
+def check_synthesized_dataset_node(state: GraphState):
+    retry_count = state.get("retry_count", 0)
+    if retry_count < 3:
+        print("--- [Node: Check Synthesized Dataset Quality] ---")
+        synthesized = state.get("synthesized_dataset", [])
+        original_query = state.get("original_query", "")
+
+        if not synthesized:
+            print("[WARN] Synthesized dataset is empty.")
+            return "retry_schema"
+
+        prompt = PromptTemplate(
+            template="""
+    You are a data quality evaluator.
+
+    The user asked: "{original_query}"
+
+    The following dataset was synthesized from document extraction:
+
+    {synthesized_dataset}
+
+    Evaluate this dataset on:
+    - Relevance to the user query
+    - Presence of duplicate or redundant entries
+    - Completeness and clarity
+
+    Is this a good final dataset for the user's intent?
+    Respond with a single word: "yes" or "no".
+    """,
+            input_variables=["original_query", "synthesized_dataset"],
+        )
+
+        chain = prompt | llm | StrOutputParser()
+
+        try:
+            decision = (
+                chain.invoke(
+                    {
+                        "original_query": original_query,
+                        "synthesized_dataset": json.dumps(synthesized, indent=2),
+                    }
+                )
+                .strip()
+                .lower()
+            )
+
+            if "yes" in decision:
+                print("[GOOD FINAL DATASET]")
+                return "good_schema"
+            else:
+                print("[BAD FINAL DATASET]")
+                return "retry_schema"
+        except Exception as e:
+            print(f"[ERROR] Failed to check synthesized dataset: {e}")
+            return "retry_schema"
+
+    else:
+        print("Exceeded 3...TERMINATING")
+        return "end"
+
+
+# Add a retry node
+def re_interpret_query_node(state: GraphState):
+    print("--- [Node: Re-Interpret Query] ---")
+    failed_schema = state.get("interpreted_schema")
+    retrieved_docs = state.get("retrieved_docs")
+    bad_results = state.get("extracted_data_points")
+    retry_count = state.get("retry_count", 0)
+
+    feedback = f"""
+    Previous Schema: {json.dumps(failed_schema.schema_description)}
+    Retrieved Docs Count: {len(retrieved_docs or [])}
+    Extracted Samples: {[item.data for item in bad_results[:2]]}
+    Problem: The previous attempt to synthesize a dataset failed to meet quality standards. Please refine the schema better.
+    """
+
+    print("here is the feedback")
+    print(feedback)
+
+    parser = PydanticOutputParser(pydantic_object=InterpretedSchema)
+
+    prompt = PromptTemplate(
+        template="""Revise the structured schema and retrieval query based on feedback.
+User Query: {query}
+
+Feedback from prior run:
+{feedback}
+
+Generate:
+1.  `schema_description`: A refined dictionary of the data fields the user likely wants.
+2.  `retrieval_query`: A better-optimized vector search query for this need.
+
+{format_instructions}
+""",
+        input_variables=["query", "feedback"],
+        partial_variables={"format_instructions": parser.get_format_instructions()},
+    )
+
+    chain = prompt | llm | parser
+
+    try:
+        new_interpretation = chain.invoke(
+            {"query": state["original_query"], "feedback": feedback}
+        )
+        print(f"[Retry] New Schema: {new_interpretation.schema_description}")
+        return {
+            "interpreted_schema": new_interpretation,
+            "retry_count": retry_count + 1,
+            "error_message": None,
+        }
+    except Exception as e:
+        print(f"[Retry ERROR] Failed to reinterpret query: {e}")
+        return {"error_message": f"Retry failed: {str(e)}"}
 
 
 def extract_data_node(state: GraphState):
@@ -964,6 +1091,8 @@ workflow.add_node("generate_statistics",generate_statistics_node)
 workflow.add_node(
     "error_node", lambda state: print_error("⛔ Workflow terminated due to error.")
 )
+# workflow.add_node("check_schema_success", check_schema_success_node)
+workflow.add_node("re_interpret_query", re_interpret_query_node)
 
 # Define edges
 workflow.set_entry_point("root")
@@ -1007,9 +1136,66 @@ workflow.add_conditional_edges(
     {"continue": "process_data", "end_error": "error_node"},
 )
 
+# workflow.add_conditional_edges(
+#     "extract_data",
+#     should_continue,
+#     {"continue": "check_schema_success", "end_error": "error_node"},
+# )
+
+workflow.add_conditional_edges(
+    "synthesize_dataset",
+    check_synthesized_dataset_node,
+    {
+        "retry_schema": "re_interpret_query",
+        "end": END,
+        "good_schema": END,
+    },
+)
+
+workflow.add_conditional_edges(
+    "re_interpret_query",
+    check_synthesized_dataset_node,
+    {
+        "retry_schema": "re_interpret_query",
+        "end": END,
+        "good_schema": END,
+    },
+)
+
 
 # Final step
-workflow.add_edge("process_data", END)  # Successful completion ends here
+# workflow.add_edge("synthesize_dataset", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
 # Compile the graph
-graph = workflow.compile(checkpointer=saver)
+graph = workflow.compile()
+
+if __name__ == "__main__":
+    print("\n--- Running Sample Workflow ---")
+
+    # 1. User Query Input:
+    initial_state = {"original_query": "What is my name"}
+    print(f"Initial Query: {initial_state['original_query']}")
+
+    # 2. Run the Graph:
+    final_state = graph.invoke(
+        initial_state, {"recursion_limit": 10}
+    )  # Add recursion limit
+
+    # 4. Final Output:
+    #    The `final_state` dictionary contains the results of the workflow.
+    print("\n--- Workflow Complete ---")
+    print("here is the final state\n")
+    for key in final_state.keys():
+        print(final_state[key])
+    # print(final_state)
+    if final_state.get("error_message"):
+        print(f"Workflow failed with error: {final_state['error_message']}")
+    elif final_state.get("synthesized_dataset") is not None:
+        print("Synthesized Dataset:")
+        # Pretty print the final dataset
+        print(json.dumps(final_state["synthesized_dataset"], indent=2))
+        print(f"\nTotal records generated: {len(final_state['synthesized_dataset'])}")
+    else:
+        print(
+            "Workflow finished, but no dataset was generated (e.g., no relevant documents found or data extracted)."
+        )
