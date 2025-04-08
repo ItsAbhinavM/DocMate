@@ -29,6 +29,9 @@ class InterpretedSchema(BaseModel):
     ambiguity: Optional[str] = Field(
         description="If the user query is too vague or could be interpreted in multiple ways request explain briefly why clarification is needed"
     )
+    needs_statistics: Optional[bool]= Field(
+            description="If the user needs to see the statistics of the overall datbase"
+    )
 
 
 class ExtractedItem(BaseModel):
@@ -54,7 +57,7 @@ class GraphState(TypedDict):
     error_message: Optional[str]
     needs_clarification: Optional[bool]
     current_iteration: int
-
+    needs_statistics: Optional[bool]
 
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
 saver = MemorySaver()
@@ -72,6 +75,13 @@ def interpret_query_node(state: GraphState):
     """Interprets the user query to define schema and retrieval query."""
     print("--- [Node: Interpret Query] ---")
     user_query = state.get("current_query") or state["original_query"]
+    # if any(keyword in user_query.lower() for keyword in ["statistics", "stats", "show stats", "show statistics"]):
+    #     print("Statistics request detected")
+    #     return {
+    #         "needs_statistics": True,
+    #         "needs_clarification": False,
+    #         "error_message": None
+    #     }
 
     parser = PydanticOutputParser(pydantic_object=InterpretedSchema)
 
@@ -83,7 +93,7 @@ Based on the query, define:
 1.  `schema_description`: A dictionary describing the columns/fields the user wants in their dataset. Keys should be concise field names, values should be clear descriptions.
 2.  `retrieval_query`: A query string optimized for finding relevant documents/chunks in a vector database related to the user's request. Focus on key entities, actions, and concepts.
 3.  `ambiguity`: briefly explain *why* (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, leave as null.
-
+4. `needs_statistics`: Set to true if the user is requesting statistics or analysis about the document collection itself, rather than data extraction. For example, requests like "show me statistics of the documents", "how many PDFs do we have?", or "what's the average document length?" would set this to true.
 {format_instructions}
 """,
         input_variables=["query"],
@@ -96,6 +106,16 @@ Based on the query, define:
         print(f"Ambiguity: {interpreted_output.ambiguity}")
         print(f"Interpreted Schema: {interpreted_output.schema_description}")
         print(f"Retrieval Query: {interpreted_output.retrieval_query}")
+        print(f"Retrieval Query: {interpreted_output.retrieval_query}")
+
+        if interpreted_output.needs_statistics:
+            return {
+                    "interpreted_schema":interpreted_output,
+                    "needs_statistics":True,
+                    "needs_clarification":False,
+                    "error_message":None,
+                    }
+
         if interpreted_output.ambiguity:
             return {
                 "interpreted_schema": interpreted_output,
@@ -250,6 +270,55 @@ def synthesize_dataset_node(state: GraphState):
     print(f"Synthesized dataset with {len(final_dataset)} records.")
     return {"synthesized_dataset": final_dataset, "error_message": None}
 
+def generate_statistics_node(state: GraphState):
+    """Generates statistics about the available documents."""
+    print("--- [Node: Generate Statistics] ---")
+    
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import io
+    import base64
+    from filehandler import get_document_stats
+    
+    try:
+        # Get statistics from your documents
+        doc_stats = get_document_stats()
+        
+        # Create some visualizations
+        plt.figure(figsize=(10, 6))
+        
+        # Document count by type
+        plt.subplot(1, 2, 1)
+        doc_types = [key for key in doc_stats['doc_types'].keys()]
+        counts = [value for value in doc_stats['doc_types'].values()]
+        plt.bar(doc_types, counts)
+        plt.title('Document Count by Type')
+        plt.xticks(rotation=45)
+        
+        # Token distribution
+        plt.subplot(1, 2, 2)
+        plt.hist(doc_stats['token_counts'], bins=10)
+        plt.title('Token Count Distribution')
+        
+        # Save plot to bytes
+        buf = io.BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        
+        # Convert to base64 for easy transmission
+        img_str = base64.b64encode(buf.read()).decode('utf-8')
+        
+        plt.close()
+        
+        return {
+            "statistics": doc_stats,
+            "visualization": img_str,
+            "error_message": None
+        }
+    except Exception as e:
+        print(f"[ERROR] Failed to generate statistics: {e}")
+        return {"error_message": f"Failed to generate statistics: {str(e)}"}
 
 # -- Functions for conditional edges --
 def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
@@ -272,6 +341,10 @@ def decide_after_interpret(
         print("  Decision: Error occurred during interpretation.")
         return "handle_error"
 
+    if state.get("needs_statistics"):
+        print("Decision: Statistics requested. Routing to statistics node")
+        return "generate_statistics"
+
     if state.get("needs_clarification"):
         print(
             "  Decision: Clarification needed (API should pause/resume). Routing back for re-interpretation."
@@ -291,6 +364,18 @@ def decide_after_interpret(
     print("  Decision: Interpretation successful, proceeding to retrieve documents.")
     return "proceed_to_retrieve"
 
+def decide_after_synthesize(
+    state: GraphState,
+) -> Literal["end_workflow", "generate_statistics"]:
+    """Routes flow after synthesis to either end or generate statistics."""
+    print("--- [Edge: Decide After Synthesize] ---")
+    
+    if state.get("needs_statistics", False):
+        print("  Decision: Statistics requested. Routing to statistics node.")
+        return "generate_statistics"
+    
+    print("  Decision: Normal workflow complete, ending.")
+    return "end_workflow"
 
 # --- Build the Graph ---
 workflow = StateGraph(GraphState)
@@ -301,6 +386,7 @@ workflow.add_node("interpret_query", interpret_query_node)
 workflow.add_node("retrieve_documents", retrieve_documents_node)
 workflow.add_node("extract_data", extract_data_node)
 workflow.add_node("synthesize_dataset", synthesize_dataset_node)
+workflow.add_node("generate_statistics",generate_statistics_node)
 workflow.add_node(
     "error_node", lambda state: print("Workflow terminated due to error.")
 )
@@ -316,10 +402,18 @@ workflow.add_conditional_edges(
     {
         "loop_for_clarification": "root",
         "proceed_to_retrieve": "retrieve_documents",
+        "generate_statistics": "generate_statistics",
         "end_error": "error_node",
     },
 )
-
+workflow.add_conditional_edges(
+    "synthesize_dataset",
+    decide_after_synthesize,
+    {
+        "end_workflow": END,
+        "generate_statistics": "generate_statistics",
+    },
+)
 workflow.add_conditional_edges(
     "retrieve_documents",
     should_continue,
@@ -340,7 +434,7 @@ workflow.add_conditional_edges(
 # Final step
 workflow.add_edge("synthesize_dataset", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
-
+workflow.add_edge("generate_statistics",END)
 # Compile the graph
 graph = workflow.compile(checkpointer=saver)
 

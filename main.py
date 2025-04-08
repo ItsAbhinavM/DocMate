@@ -109,7 +109,33 @@ async def send_prompt(request: InvokeRequest):
         raise HTTPException(
             status_code=500, detail=f"Workflow execution error: {str(e)}"
         )
-
+@app.get("/document_statistics")
+async def get_statistics():
+    """Endpoint to get statistics about the documents in the system."""
+    try:
+        # Configuration for LangGraph state checkpointing
+        run_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": run_id}}
+        
+        # Initial minimal state just for statistics
+        initial_state = {"original_query": "generate_statistics", "current_iteration": 0}
+         
+        stats_result = await graph.acall(
+            inputs=initial_state,
+            config=config,
+            return_only="generate_statistics"
+        )
+        
+        if stats_result.get("error_message"):
+            raise HTTPException(status_code=500, detail=stats_result["error_message"])
+            
+        return {
+            "statistics": stats_result["statistics"],
+            "visualization": stats_result["visualization"]
+        }
+    except Exception as e:
+        print(f"Error generating statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Statistics error: {str(e)}")
 
 @app.post("/respond", response_model=RespondResponse)
 async def respond_to_workflow(request: RespondRequest):
