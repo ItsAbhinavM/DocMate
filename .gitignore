@@ -186,6 +186,8 @@ virtualenv/
 uploads/
 vectorstore/
 
+ship_wright/package-lock.json
+
 # assets
 orchestrator/Media/
 statistics_output/
