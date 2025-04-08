@@ -6,6 +6,7 @@ from typing import Optional
 import aiofiles
 from fastapi import FastAPI, HTTPException, Request, UploadFile
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 from agent import graph
 from filehandler import (csv_driver, doc_driver, docx_driver, image_driver,
@@ -13,6 +14,15 @@ from filehandler import (csv_driver, doc_driver, docx_driver, image_driver,
 
 app = FastAPI()
 active_runs = {}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Or specify: ["http://localhost:5173"] if using Vite/Tauri dev
+    allow_credentials=True,
+    allow_methods=["*"],  # You can also specify: ["POST", "GET", "OPTIONS"]
+    allow_headers=["*"],  # Or specify: ["Content-Type", "Authorization"]
+)
+
 
 
 class Prompt(BaseModel):

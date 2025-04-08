@@ -4,9 +4,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        montreal: ['"Neue Montreal"', "sans-serif"],
-      },
+        montreal: ['"Neue Montreal"', 'sans-serif']
+      }
     },
   },
   plugins: [],
-};
+}

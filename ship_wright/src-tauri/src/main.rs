@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ship_wright_lib::run()
+    clip_harbour_lib::run()
 }
