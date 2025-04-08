@@ -40,14 +40,14 @@ function App() {
     console.log(payload, "here is payload");
 
     try {
-      const response = await axios.post('http://localhost:8000/send_prompt', 
-        payload, 
+      const response = await axios.post('http://localhost:8000/send_prompt',
+        payload,
         {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        });
 
       const data = response.data;
       console.log("here is the data btw", data);
@@ -78,6 +78,13 @@ function App() {
     setShowNav(!showNav);
   };
 
+  // New chat function to reset runId and clear messages
+  const handleNewChat = () => {
+    setRunId(undefined);
+    setMessages([]);
+    console.log("New chat started: runId reset and messages cleared");
+  };
+
   useEffect(() => {
     if (contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight;
@@ -86,7 +93,7 @@ function App() {
 
   return (
     <div className="flex w-screen min-h-screen bg-opacity-70 bg-black font-sans overflow-x-hidden">
-      {showNav && <NavPanel />}
+      {showNav && <NavPanel onNewChat={handleNewChat} />}
 
       <div className="flex-1 flex flex-col items-center h-screen">
         {/* Header with logo */}
