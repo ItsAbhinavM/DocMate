@@ -3,6 +3,68 @@ document.getElementById("chat-form").addEventListener("submit", (e) => {
   window.api.sendMessage();
 });
 
+let mediaRecorder;
+let audioChunks = [];
+
+const recordBtn = document.getElementById("recordBtn");
+const stopBtn = document.getElementById("stopBtn");
+const sendBtn = document.getElementById("sendBtn");
+const liveAudio = document.getElementById("liveAudio");
+const player = document.getElementById("player");
+
+recordBtn.addEventListener("click", async (e) => {
+  e.preventDefault();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+  liveAudio.srcObject = stream;
+  liveAudio.play();
+
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.start();
+
+  audioChunks = [];
+
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data.size > 0) {
+      audioChunks.push(event.data);
+    }
+  };
+
+  mediaRecorder.onstop = () => {
+    const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+    const audioUrl = URL.createObjectURL(audioBlob);
+    player.src = audioUrl;
+
+    // Optionally send to main process
+    window.electronAPI?.sendAudio(audioBlob); // Only if you're using contextBridge for IPC
+
+    sendBtn.disabled = false;
+  };
+
+  recordBtn.disabled = true;
+  stopBtn.disabled = false;
+});
+
+stopBtn.addEventListener("click", () => {
+  mediaRecorder.stop();
+
+  const tracks = liveAudio.srcObject.getTracks();
+  tracks.forEach((track) => track.stop());
+  liveAudio.srcObject = null;
+
+  recordBtn.disabled = false;
+  stopBtn.disabled = true;
+});
+
+sendBtn.addEventListener("click", () => {
+  // Example: download the audio or send to backend
+  const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(audioBlob);
+  a.download = "recording.webm";
+  a.click();
+});
+
 document.getElementById("nav-btn").addEventListener("click", async (e) => {
   let w = document.getElementById("nav").style.display;
   console.log(w);
@@ -83,7 +145,6 @@ dropZone.addEventListener("drop", async (e) => {
   // // Reset form
   // document.getElementById("upload-form").reset();
 });
-
 
 function ResponseText(prompt) {
   window.api.getData(prompt);
