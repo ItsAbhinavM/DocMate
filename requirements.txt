@@ -17,3 +17,5 @@ langgraph
 pytesseract
 faiss-cpu
 unstructured.pytesseract
+pymupdf
+coloroma
