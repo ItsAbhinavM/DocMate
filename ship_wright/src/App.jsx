@@ -1,4 +1,3 @@
-// App.jsx - Main component
 import { useState, useRef, useEffect } from 'react';
 // import { invoke } from '@tauri-apps/api/tauri';
 import Logo from "./assets/type_1.gif";
@@ -8,14 +7,23 @@ import ChatHistory from './components/ChatHistory';
 import NavPanel from './components/NavPanel';
 import './App.css'
 import axios from 'axios';
+import JSONView from './components/json_view';
 
 function App() {
   const [messages, setMessages] = useState([]);
   const [showNav, setShowNav] = useState(true);
   const contentRef = useRef(null);
 
-  const addMessage = (text, isUser) => {
-    setMessages(prev => [...prev, { text, isUser }]);
+  const addMessage = (messageContent, isUser, url = null) => {
+    setMessages(prev => [
+      ...prev,
+      {
+        isUser,
+        text: typeof messageContent === 'string' ? messageContent : null,
+        component: typeof messageContent !== 'string' ? messageContent : null,
+        imageUrl: url,
+      }
+    ]);
   };
 
   const handleSendMessage = async (text) => {
@@ -34,7 +42,20 @@ function App() {
       });
 
       const data = response.data;
-      addMessage(data.message, false, data.url);
+      console.log("here is the data btw", data);
+
+      if (data.status === "waiting_clarification") {
+        addMessage(data.message, false, data.url);
+      } else {
+        if (data.message) {
+          addMessage(data.message, false);
+        }
+
+        console.log(data["final_dataset"], "this is the json to be viewed")
+
+        addMessage(<JSONView jsoner={{0:data["final_dataset"]}} />, false);
+      }
+
     } catch (error) {
       console.error('Error sending message:', error);
       addMessage('Sorry, there was an error processing your request.', false);

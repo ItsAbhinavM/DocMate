@@ -1,5 +1,3 @@
-
-// components/ChatHistory.jsx
 function ChatHistory({ messages }) {
     return (
       <div className="flex flex-col space-y-4 p-4">
@@ -15,15 +13,19 @@ function ChatHistory({ messages }) {
                 className="w-8 h-8 mr-2 self-start mt-1"
               />
             )}
-            
+  
             <div
-              className={`p-3 rounded-lg max-w-3xl ${
+              className={`p-3 rounded-lg max-w-3xl overflow-x-auto ${
                 message.isUser
                   ? 'bg-blue-600 text-white self-end'
                   : 'bg-gray-700 text-white'
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.text}</p>
+              {message.component ? (
+                message.component
+              ) : (
+                <p className="whitespace-pre-wrap">{message.text}</p>
+              )}
               {message.imageUrl && (
                 <img
                   src={message.imageUrl}
@@ -39,3 +41,4 @@ function ChatHistory({ messages }) {
   }
   
   export default ChatHistory;
+  
