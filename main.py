@@ -22,6 +22,7 @@ class Prompt(BaseModel):
 # --- Request/Response Models ---
 class InvokeRequest(BaseModel):
     original_query: str
+    run_id: Optional[str] = None  # Used to continue an existing conversation
 
 
 class InvokeResponse(BaseModel):
@@ -45,14 +46,18 @@ class RespondResponse(BaseModel):
 
 @app.post("/send_prompt")
 async def send_prompt(request: InvokeRequest):
-    run_id = str(uuid.uuid4())
+    initial_state = {"original_query": request.original_query}
+    if request.run_id:
+        run_id = request.run_id
+        initial_state["run_mode"] = "refinement"
+    else:
+        run_id = str(uuid.uuid4())
+        initial_state["run_mode"] = "initial_generation"
+
     print(f"Starting run_id: {run_id} for query: '{request.original_query}'")
 
     # Configuration for LangGraph state checkpointing
     config = {"configurable": {"thread_id": run_id}}
-
-    # Initial state for this run
-    initial_state = {"original_query": request.original_query, "current_iteration": 0}
 
     try:
         # Use stream to process step-by-step and handle interrupts
@@ -88,7 +93,7 @@ async def send_prompt(request: InvokeRequest):
         # If the stream finishes without interruption or after resuming
         print(f"Run {run_id}: Workflow finished.")
         final_state = graph.get_state(config)
-        dataset = final_state.values.get("synthesized_dataset")
+        dataset = final_state.values.get("processed_dataset")
         error = final_state.values.get("error_message")
 
         if error:
@@ -169,7 +174,7 @@ async def respond_to_workflow(request: RespondRequest):
         # If the stream finishes after resuming
         print(f"Run {run_id}: Workflow finished after resuming.")
         final_state = graph.get_state(config)
-        dataset = final_state.values.get("synthesized_dataset")
+        dataset = final_state.values.get("processed_dataset")
         error = final_state.values.get("error_message")
 
         if error:
@@ -214,4 +219,3 @@ async def upload_image(file: UploadFile, request: Request):
             return {"error": f"Unsupported file type: {ext}"}
 
     return f"{request.base_url}uploads/{file.filename}"
-
