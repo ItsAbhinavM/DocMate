@@ -19,6 +19,12 @@ const { contextBridge, ipcRenderer, net } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   activateApp: () => ipcRenderer.send("activate-app"),
+  sendAudio: (blob) => {
+    blob.arrayBuffer().then((buffer) => {
+      ipcRenderer.send("send-audio", Buffer.from(buffer));
+      console.log("Hi i am being called ha ha ");
+    });
+  },
 });
 
 contextBridge.exposeInMainWorld("api", {
@@ -84,20 +90,70 @@ contextBridge.exposeInMainWorld("api", {
   },
   uploadFile: async (fileData) => {
     const formData = new FormData();
-    formData.append("file", new Blob([fileData.buffer], { type: fileData.type }), fileData.name);
-  
+    formData.append(
+      "file",
+      new Blob([fileData.buffer], { type: fileData.type }),
+      fileData.name,
+    );
+
     try {
       const response = await fetch("http://localhost:8000/file_upload", {
         method: "POST",
         body: formData,
       });
-  
+
       const result = await response.text(); // since your endpoint returns a string URL
       console.log("Upload result:", result);
     } catch (err) {
       console.error("Error uploading file:", err);
     }
-  }  
+  },
+  sendAudio: (blob) => {
+    blob.arrayBuffer().then((buffer) => {
+      ipcRenderer.send("send-audio", Buffer.from(buffer));
+      console.log("sendAudio called");
+    });
+  },
+});
+
+ipcRenderer.on("transcription-complete", (event, text) => {
+  console.log("📝 Transcribed:", text);
+  const url = "http://localhost:8000/send_prompt";
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({
+      content: text,
+    }),
+  })
+    .then((response) => {
+      return response.json();
+    })
+    .then((data) => {
+      const machine_text = data.message;
+      const noder = document.createElement("div");
+      const textnode = document.createTextNode(machine_text);
+      noder.classList.add("machine-text");
+      noder.appendChild(textnode);
+      if (data.url) {
+        const machine_img_url = data.url;
+        const img_elem = document.createElement("img");
+        img_elem.src = machine_img_url;
+        noder.appendChild(img_elem);
+      }
+      const logo = document.createElement("img");
+      logo.src = "./Type 1.gif";
+      logo.classList.add("side-logo");
+      const test = document.createElement("div");
+      test.classList.add("machine-container");
+      test.appendChild(logo);
+      test.appendChild(noder);
+      test.style.display = "flex";
+      document.getElementById("content").appendChild(test);
+    });
 });
 
 window.SpeechRecognition =

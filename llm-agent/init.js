@@ -34,10 +34,9 @@ recordBtn.addEventListener("click", async (e) => {
     const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
     const audioUrl = URL.createObjectURL(audioBlob);
     player.src = audioUrl;
-
-    // Optionally send to main process
-    window.electronAPI?.sendAudio(audioBlob); // Only if you're using contextBridge for IPC
-
+    console.log("Audio Blob:", audioBlob);
+    console.log("Audio URL:", audioUrl);
+    window.api.sendAudio(audioBlob);
     sendBtn.disabled = false;
   };
 
