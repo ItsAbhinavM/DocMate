@@ -8,6 +8,9 @@ __pycache__/
 statistics_output/
 # C extensions
 *.so
+# assets
+orchestrator/Media/
+statistics_output/
 
 # Distribution / packaging
 .Python
@@ -188,6 +191,3 @@ vectorstore/
 
 ship_wright/package-lock.json
 
-# assets
-orchestrator/Media/
-statistics_output/
