@@ -110,51 +110,68 @@
                 </div>
                 <div id="content" style="flex: 1"></div>
             </div>
-            <form>
-                <button id="recordBtn">Start Recording</button>
-                <button id="stopBtn" disabled>Stop Recording</button>
-                <button id="sendBtn" disabled>Send Audio</button>
-                <audio id="liveAudio" controls></audio>
-                <audio id="player" controls></audio>
-            </form>
+            <!-- Update the chat form section -->
             <form id="chat-form" style="
-                        display: flex;
-                        width: 100%;
-                        justify-content: center;
-                        max-width: 40vw;
-                        margin: 20px;
-                    ">
-                <div id="input-container" style="margin-right: 5px">
+            display: flex;
+            width: 100%;
+            justify-content: center;
+            max-width: 40vw;
+            margin: 20px;
+            ">
+                <div id="input-container" style="margin-right: 5px; position: relative;">
                     <textarea id="chat-box" placeholder="Get started" style="
-                                background-color: rgb(44, 39, 39);
-                                color: white;
-                                outline: none;
-                            "></textarea>
+                            background-color: rgb(44, 39, 39);
+                            color: white;
+                            outline: none;
+                            padding-right: 80px;
+                        "></textarea>
+
+                <!-- Action buttons inside the input container -->
+                <div id="action-buttons" style="position: absolute; right: 10px; bottom: 10px; display: flex; gap: 10px;">
+                    <button type="button" id="mic-toggle" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; padding: 5px;">🎤</button>
+                    <button type="button" id="file-toggle" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; padding: 5px;">📎</button>
                 </div>
+
+                <!-- File upload area (hidden by default) -->
+                <div id="file-upload-area" style="display: none; position: absolute; bottom: 60px; right: 0; background-color: rgb(44, 39, 39); border: 1px solid #444; border-radius: 10px; padding: 10px; width: 250px;">
+                    <div id="drop-zone" style="border: 2px dashed #aaa; padding: 10px; margin-bottom: 10px; text-align: center; color: white;">
+                        Drop file here
+                    </div>
+                    <input type="file" id="file-input" name="myFile" style="color: white; margin-bottom: 5px; width: 100%;" />
+                </div>
+
+                <!-- Recording indicator (hidden by default) -->
+                <div id="recording-indicator" style="display: none; position: absolute; bottom: 60px; right: 0; background-color: rgb(44, 39, 39); border: 1px solid #444; border-radius: 10px; padding: 10px; width: 250px;">
+                <div style="color: white; text-align: center;">
+                    <span id="recording-status">Recording...</span>
+                    <span id="recording-time" style="margin-left: 10px;">00:00</span>
+                </div>
+                </div>
+                </div>
+
                 <div style="display: flex; align-items: end">
-                    <button type="submit" name="send-chat" id="send-chat" style="
-                                border: none;
-                                border-radius: 50px;
-                                min-width: 100px;
-                                min-height: 60px;
-                                max-height: 50px;
-                            ">
-                            Send
-                        </button>
+                <button type="submit" name="send-chat" id="send-chat" style="
+                        border: none;
+                        border-radius: 50px;
+                        min-width: 100px;
+                        min-height: 60px;
+                        max-height: 50px;
+                    ">
+                    Send
+                </button>
                 </div>
             </form>
-            <div id="drop-zone" style="
-                        border: 2px dashed #aaa;
-                        padding: 20px;
-                        margin-bottom: 20px;
-                        text-align: center;
-                    ">
-                Drag and drop your file here
+
+            <!-- Hide the original file upload elements -->
+            <div id="drop-zone" style="display: none;"></div>
+            <form id="upload-form" style="display: none;"></form>
+
+            <!-- Keep the audio elements but hide them -->
+            <div style="display: none;">
+            <audio id="liveAudio" controls></audio>
+            <audio id="player" controls></audio>
+            <button id="sendBtn">Send Audio</button>
             </div>
-            <form id="upload-form" action="#" method="post" enctype="multipart/form-data" style="margin-bottom: 20px">
-                <input type="file" id="file-input" name="myFile" required />
-                <button type="submit" id="send-file">Upload</button>
-            </form>
             <div id="dispose" style="flex: 1"></div>
         </div>
     </div>
