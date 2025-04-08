@@ -97,18 +97,14 @@ function AudioRecorder({ onTranscription }) {
     <div className="flex flex-col items-center mb-4">
       <div className="flex space-x-2 mb-2">
         <button
-          onClick={startRecording}
-          disabled={isRecording}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`text-white px-4 py-2 rounded disabled:opacity-50 ${
+            isRecording
+              ? "bg-red-500 hover:bg-red-600"
+              : "bg-blue-500 hover:bg-blue-600"
+          }`}
         >
-          Start Recording
-        </button>
-        <button
-          onClick={stopRecording}
-          disabled={!isRecording}
-          className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded disabled:opacity-50"
-        >
-          Stop Recording
+          {isRecording ? "Stop Recording" : "Start Recording"}
         </button>
         <button
           onClick={downloadAudio}

@@ -1,30 +1,20 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from "react";
 // import { invoke } from '@tauri-apps/api/tauri';
 import Logo from "./assets/type_1.gif";
-import ChatForm from './components/ChatForm';
-import AudioRecorder from './components/AudioRecorder';
-import ChatHistory from './components/ChatHistory';
-import NavPanel from './components/NavPanel';
-import './App.css'
-import axios from 'axios';
-import JSONView from './components/json_view';
-// App.jsx - Main component
-import { useState, useRef, useEffect } from "react";
-import Logo from "../public/type_1.gif";
 import ChatForm from "./components/ChatForm";
 import AudioRecorder from "./components/AudioRecorder";
-import FileUpload from "./components/FileUpload";
 import ChatHistory from "./components/ChatHistory";
 import NavPanel from "./components/NavPanel";
 import "./App.css";
 import axios from "axios";
+import JSONView from "./components/json_view";
 
 function App() {
   const [messages, setMessages] = useState([]);
   const [showNav, setShowNav] = useState(true);
   const contentRef = useRef(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [runId, setRunId] = useState()
+  const [runId, setRunId] = useState();
 
   const addMessage = (text, isUser) => {
     setMessages((prev) => [...prev, { text, isUser }]);
@@ -32,22 +22,22 @@ function App() {
 
   const handleSendMessage = async (text) => {
     if (!text.trim()) return;
-    setIsLoading(true)
+    setIsLoading(true);
 
     addMessage(text, true);
-  
-    let payload = {}
-    if (runId){
+
+    let payload = {};
+    if (runId) {
       payload = {
         original_query: text,
-        run_id: runId
-      }
-    }else{
+        run_id: runId,
+      };
+    } else {
       payload = {
         original_query: text,
-      }
+      };
     }
-    console.log(payload, "here is payload")
+    console.log(payload, "here is payload");
 
     try {
       const response = await axios.post(
@@ -66,7 +56,7 @@ function App() {
       const data = response.data;
       console.log("here is the data btw", data);
 
-      setIsLoading(false)
+      setIsLoading(false);
 
       if (data.status === "waiting_clarification") {
         addMessage(data.message, false, data.url);
@@ -75,14 +65,13 @@ function App() {
           addMessage(data.message, false);
         }
 
-        console.log(data["final_dataset"], "this is the json to be viewed")
+        console.log(data["final_dataset"], "this is the json to be viewed");
 
-        addMessage(<JSONView jsoner={{0:data["final_dataset"]}} />, false);
+        addMessage(<JSONView jsoner={{ 0: data["final_dataset"] }} />, false);
       }
 
-      console.log("This is the run id", data["run_id"])
-      setRunId(data["run_id"])
-
+      console.log("This is the run id", data["run_id"]);
+      setRunId(data["run_id"]);
     } catch (error) {
       console.error("Error sending message:", error);
       addMessage("Sorry, there was an error processing your request.", false);
@@ -135,7 +124,9 @@ function App() {
             ref={contentRef}
           >
             <ChatHistory messages={messages} />
-            <div className={`flex space-x-1 ${isLoading?"ml-[5vw]":"hidden"}`}>
+            <div
+              className={`flex space-x-1 ${isLoading ? "ml-[5vw]" : "hidden"}`}
+            >
               <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
               <div className="w-2 h-2 bg-white rounded-full animate-bounce delay-150" />
               <div className="w-2 h-2 bg-white rounded-full animate-bounce delay-300" />
