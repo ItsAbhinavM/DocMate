@@ -70,8 +70,6 @@ async def send_prompt(request: InvokeRequest):
                 0
             ]  # Get the state dictionary
 
-            print(f"Run {run_id}: Just executed node -> {node_name}")
-
             # --- Check if clarification is needed AFTER interpretation ---
             # We check the state *after* the node that *might* trigger the interrupt condition
             if node_name == "interpret_query":
@@ -91,7 +89,6 @@ async def send_prompt(request: InvokeRequest):
                         )
 
         # If the stream finishes without interruption or after resuming
-        print(f"Run {run_id}: Workflow finished.")
         final_state = graph.get_state(config)
         dataset = final_state.values.get("processed_dataset")
         error = final_state.values.get("error_message")

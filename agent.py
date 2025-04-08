@@ -1,7 +1,10 @@
 import json
 import os
+import time
 from typing import Any, Dict, List, Literal, Optional, TypedDict
 
+import fitz
+from colorama import Fore, Style, init
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.output_parsers import (JsonOutputParser,
@@ -12,8 +15,17 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from tqdm import tqdm
 
-from filehandler import query_vectorstore
+from filehandler import vectorstore
+
+# Initialize colorama for cross-platform color support
+init(autoreset=True)
+# Initialize Rich console
+console = Console()
 
 load_dotenv()
 
@@ -65,20 +77,102 @@ class GraphState(TypedDict):
     error_message: Optional[str]
     needs_clarification: Optional[bool]
     current_iteration: int
+    page_contents: Optional[Dict]
 
     # Output
     processed_dataset: Optional[List[Dict]]  # Final structured dataset
 
 
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
+llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21")
 saver = MemorySaver()
+
+
+# --- Helper Functions for Print Formatting ---
+def print_header(text):
+    """Print a beautifully formatted header."""
+    console.print(f"\n{Fore.CYAN}{'=' * 80}")
+    console.print(Panel(f"[bold cyan]{text}[/bold cyan]", expand=False))
+    console.print(f"{Fore.CYAN}{'=' * 80}\n")
+
+
+def print_subheader(text):
+    """Print a beautifully formatted subheader."""
+    console.print(f"\n{Fore.MAGENTA}{'-' * 60}")
+    console.print(f"[bold magenta]✨ {text} ✨[/bold magenta]")
+    console.print(f"{Fore.MAGENTA}{'-' * 60}\n")
+
+
+def print_success(text):
+    """Print a success message."""
+    console.print(f"[bold green]✅ {text}[/bold green]")
+
+
+def print_info(text):
+    """Print an informational message."""
+    console.print(f"[blue]ℹ️ {text}[/blue]")
+
+
+def print_warning(text):
+    """Print a warning message."""
+    console.print(f"[bold yellow]⚠️ {text}[/bold yellow]")
+
+
+def print_error(text):
+    """Print an error message."""
+    console.print(f"[bold red]❌ {text}[/bold red]")
+
+
+def print_data_summary(data, title="Data Summary"):
+    """Print a summary of data in a pretty table."""
+    if not data:
+        print_info("No data to display")
+        return
+
+    table = Table(title=title)
+
+    # Add columns based on the first item keys
+    if isinstance(data, list) and data:
+        sample = data[0]
+        for key in sample.keys():
+            table.add_column(key, style="cyan")
+
+        # Add up to 5 rows as preview
+        preview_limit = min(5, len(data))
+        for i in range(preview_limit):
+            row = [str(data[i].get(key, ""))[:50] for key in sample.keys()]
+            table.add_row(*row)
+
+        if len(data) > preview_limit:
+            table.add_row(*["..." for _ in sample.keys()])
+
+        console.print(table)
+        console.print(f"[bold blue]Total records: {len(data)}[/bold blue]")
+    elif isinstance(data, dict):
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="green")
+
+        for key, value in data.items():
+            table.add_row(key, str(value)[:100])
+
+        console.print(table)
+
+
+def print_progress_bar(completed, total, description="Progress"):
+    """Print a progress bar."""
+    with tqdm(total=total, desc=description, ncols=80) as pbar:
+        pbar.update(completed)
 
 
 # --- Define Graph Nodes ---
 def root_node(state: GraphState):
     """Agent start point, increments the iteration count on each loop"""
     iteration = state.get("current_iteration", 0) + 1
-    print(f"--- [Node: Increment Iteration] --- (Starting Iteration {iteration})")
+    print_header(f"🚀 STARTING ITERATION {iteration}")
+    print_info(f"User query: {state.get('current_query') or state['original_query']}")
+
+    if iteration > 1:
+        print_info("Reprocessing after clarification...")
+
     return {
         "current_iteration": iteration,
         "error_message": None,  # Clear previous errors on loop/restart
@@ -88,9 +182,12 @@ def root_node(state: GraphState):
 
 def interpret_query_node(state: GraphState):
     """Interprets the user query to define schema and retrieval query."""
-    print("--- [Node: Interpret Query] ---")
+    print_subheader("🧠 QUERY INTERPRETATION")
     user_query = state.get("current_query") or state["original_query"]
     run_mode = state["run_mode"]
+
+    print_info(f"Mode: {run_mode.upper()}")
+    print_info(f'Query: "{user_query}"')
 
     parser = PydanticOutputParser(pydantic_object=InterpretedSchema)
 
@@ -126,15 +223,36 @@ Analyze the query to define:
         partial_variables={"format_instructions": parser.get_format_instructions()},
     )
 
+    print_info("🔄 Interpreting query with AI...")
     chain = prompt | llm | parser
     try:
         interpreted_output = chain.invoke({"query": user_query, "run_mode": run_mode})
-        print(f"Ambiguity: {interpreted_output.ambiguity}")
-        print(f"Interpreted Schema: {interpreted_output.schema_description}")
-        print(
-            f"  Refinement Instructions: {interpreted_output.refinement_instructions}"
-        )
-        print(f"Retrieval Query: {interpreted_output.retrieval_query}")
+
+        # Print schema as table
+        schema_table = Table(title="📊 Interpreted Schema")
+        schema_table.add_column("Field", style="cyan")
+        schema_table.add_column("Description", style="green")
+
+        for field, description in interpreted_output.schema_description.items():
+            schema_table.add_row(field, description)
+
+        console.print(schema_table)
+
+        # Print other interpretation details
+        if interpreted_output.ambiguity:
+            print_warning(f" 🤔 Ambiguity Detected: {interpreted_output.ambiguity}")
+        else:
+            print_info(f"🤔 Ambiguity: None")
+
+        if interpreted_output.retrieval_query:
+            print_info(f'🔍 Retrieval Query: "{interpreted_output.retrieval_query}"')
+        else:
+            print_info("🔍 No search query generated")
+
+        if interpreted_output.refinement_instructions:
+            print_info(
+                f"🔧 Refinement Plan: {interpreted_output.refinement_instructions}"
+            )
 
         # Basic validation
         if (
@@ -142,14 +260,18 @@ Analyze the query to define:
             and not interpreted_output.retrieval_query
             and not interpreted_output.ambiguity
         ):
-            print(
-                "[WARN] Initial generation mode but no retrieval query was generated. Setting ambiguity."
+            print_warning(
+                "Initial generation mode but no retrieval query was generated. Setting ambiguity."
             )
             interpreted_output.ambiguity = (
                 "Initial generation requires a search query, but none could be derived."
             )
 
         needs_clarification = bool(interpreted_output.ambiguity)
+        if needs_clarification:
+            print_warning("👋 Clarification needed before proceeding")
+        else:
+            print_success("Interpretation completed successfully")
 
         return {
             "interpreted_schema": interpreted_output,
@@ -164,50 +286,92 @@ Analyze the query to define:
             ),
         }
     except Exception as e:
-        print(f"[ERROR] Failed to interpret query: {e}")
+        print_error(f"Failed to interpret query: {e}")
         return {"error_message": f"Failed to interpret query: {str(e)}"}
 
 
 def retrieve_documents_node(state: GraphState):
     """Retrieves documents from the vector store based on the interpreted query."""
-    print("--- [Node: Retrieve Documents] ---")
+    print_subheader("📚 VECTOR SEARCH")
     if state.get("error_message"):  # Skip if previous step failed
+        print_error("Skipping retrieval due to previous error")
         return {}
     if not state.get("interpreted_schema"):
+        print_error("Interpretation step did not produce schema/query")
         return {"error_message": "Interpretation step did not produce schema/query."}
 
     retrieval_query = state["interpreted_schema"].retrieval_query
+    if not retrieval_query:
+        print_info("No retrieval query specified - skipping document retrieval")
+        return {"retrieved_docs": [], "extracted_data_points": []}
+
     try:
-        documents = query_vectorstore(
-            retrieval_query, k=10
-        )  # k should be made variable based on query
+        print_info(f'🔍 Searching for documents with query: "{retrieval_query}"')
+
+        documents = vectorstore.max_marginal_relevance_search(
+            retrieval_query, k=10, fetch_k=50
+        )
         if not documents:
-            print("[WARN] No documents found for the query.")
+            print_warning("No documents found matching the query")
             return {
                 "retrieved_docs": [],
                 "extracted_data_points": [],
-            }  # Proceed with empty list
+            }
 
-        return {"retrieved_docs": documents, "error_message": None}
+        print_success(f"Found {len(documents)} relevant documents")
+
+        # Show brief preview of document sources
+        source_table = Table(title="📑 Retrieved Documents")
+        source_table.add_column("Index", style="cyan", justify="right")
+        source_table.add_column("Source", style="green")
+        source_table.add_column("Content Preview", style="blue")
+
+        scanned_pages = set()
+        page_contents = {}
+        for i, doc in enumerate(documents):  # Show first 5 docs
+            source = doc.metadata.get("source")
+            pg_no = doc.metadata.get("page_number")
+            if source and pg_no and pg_no not in scanned_pages:
+                with fitz.open(f"uploads/{source}") as doc:
+                    if pg_no < 1 or pg_no > len(doc):
+                        raise ValueError("Page number out of range")
+                    page_text = doc[pg_no - 1].get_text()
+                    page_contents[i] = page_text
+                scanned_pages.add(pg_no)
+
+            content_preview = documents[i].page_content[:500] + "..."
+            source_table.add_row(str(i + 1), source, content_preview)
+
+        console.print(source_table)
+
+        return {
+            "retrieved_docs": documents,
+            "page_contents": page_contents,
+            "error_message": None,
+        }
     except Exception as e:
-        print(f"[ERROR] Failed during vector store query: {e}")
+        print_error(f"Failed during vector store query: {e}")
         return {"error_message": f"Failed during vector store query: {str(e)}"}
 
 
 def extract_data_node(state: GraphState):
     """Extracts structured data from retrieved documents based on the schema."""
-    print("--- [Node: Extract Data] ---")
-    if state.get("error_message") or not state.get(
-        "retrieved_docs"
-    ):  # Skip if error or no docs
+    print_subheader("🔍 DATA EXTRACTION")
+    if state.get("error_message"):  # Skip if error or no docs
+        print_error("Skipping extraction due to previous error")
         # If no docs, ensure extracted_data_points is initialized
         if "extracted_data_points" not in state:
             return {"extracted_data_points": []}
         return {}  # Pass existing state if error occurred
 
+    if not state.get("retrieved_docs"):
+        print_info("No documents to extract from")
+        return {"extracted_data_points": []}
+
     original_query = state["original_query"]
     schema_dict = state["interpreted_schema"].schema_description
     documents = state["retrieved_docs"]
+    page_contents = state.get("page_contents")
 
     # Define the parser based *dynamically* on the interpreted schema for extraction
     # For simplicity, we'll request a JSON blob matching the schema keys.
@@ -238,55 +402,88 @@ Extracted Data (JSON):
 
     extracted_items: List[ExtractedItem] = []
 
-    for i, doc in enumerate(documents):
-        print(
-            f"Processing document {i+1}/{len(documents)} (Source: {doc.metadata.get('source', 'N/A')[:50]}...)"
-        )
-        try:
-            # Prepare input for the extraction chain
-            schema_desc_string = json.dumps(schema_dict, indent=2)
-            input_data = {
-                "original_query": original_query,
-                "schema_description": schema_desc_string,
-                "document_content": doc.page_content.strip(),
-            }
-            extracted_data = extraction_chain.invoke(input_data)
+    print_info(f"📊 Processing {len(page_contents)} documents for data extraction...")
 
-            # Attempt to parse the JSON output
+    with tqdm(total=len(page_contents), desc="Extracting data", ncols=80) as pbar:
+        for i in page_contents.keys():
+            doc = documents[i]
+            source = doc.metadata.get("source", "Unknown")[:30]
+            pbar.set_description(f"Processing: {source}...")
+
             try:
-                # Handle both single object and list of objects responses
-                if isinstance(extracted_data, dict) and extracted_data:
-                    item = ExtractedItem(
-                        data=extracted_data, source_document_info=doc.metadata
-                    )
-                    extracted_items.append(item)
-                    print(f"  Extracted: {item.data}")
-                elif isinstance(extracted_data, list):
-                    for entry in extracted_data:
-                        if isinstance(entry, dict) and entry:
-                            item = ExtractedItem(
-                                data=entry, source_document_info=doc.metadata
-                            )
-                            extracted_items.append(item)
-                            print(f"  Extracted (from list): {item.data}")
-            except json.JSONDecodeError:
-                print(
-                    f"  [WARN] LLM output was not valid JSON: {extracted_json_str[:100]}..."
-                )
-            except Exception as parse_err:
-                print(f"  [WARN] Could not parse extracted data: {parse_err}")
+                # Prepare input for the extraction chain
+                schema_desc_string = json.dumps(schema_dict, indent=2)
+                input_data = {
+                    "original_query": original_query,
+                    "schema_description": schema_desc_string,
+                    "document_content": page_contents[i],
+                }
+                extracted_data = extraction_chain.invoke(input_data)
 
-        except Exception as e:
-            print(f"  [ERROR] Failed to extract from document {i+1}: {e}")
-            # Continue to next document
+                # Attempt to parse the JSON output
+                try:
+                    # Handle both single object and list of objects responses
+                    if isinstance(extracted_data, dict) and extracted_data:
+                        item = ExtractedItem(
+                            data=extracted_data, source_document_info=doc.metadata
+                        )
+                        extracted_items.append(item)
+                    elif isinstance(extracted_data, list):
+                        for entry in extracted_data:
+                            if isinstance(entry, dict) and entry:
+                                item = ExtractedItem(
+                                    data=entry, source_document_info=doc.metadata
+                                )
+                                extracted_items.append(item)
+                except json.JSONDecodeError:
+                    print_warning(
+                        f"  LLM output was not valid JSON from document {i+1}"
+                    )
+                except Exception as parse_err:
+                    print_warning(
+                        f"  Could not parse extracted data from document {i+1}: {parse_err}"
+                    )
+
+            except Exception as e:
+                print_warning(f"  Failed to extract from document {i+1}: {e}")
+                # Continue to next document
+
+            pbar.update(1)
+
+    # Show extraction summary
+    if extracted_items:
+        print_success(f"Successfully extracted {len(extracted_items)} data points")
+
+        # Show a sample of extracted data
+        if len(extracted_items) > 0:
+            sample_table = Table(title="📝 Sample Extracted Data")
+
+            # Get keys from first item
+            first_item = extracted_items[0].data
+            for key in first_item.keys():
+                sample_table.add_column(key, style="cyan")
+
+            # Add up to 3 rows for preview
+            for item in extracted_items[:3]:
+                row_data = [
+                    str(item.data.get(key, ""))[:30] for key in first_item.keys()
+                ]
+                sample_table.add_row(*row_data)
+
+            if len(extracted_items) > 3:
+                sample_table.add_row(*["..." for _ in first_item.keys()])
+
+            console.print(sample_table)
+    else:
+        print_warning("No data points were extracted from the documents")
 
     return {"extracted_data_points": extracted_items, "error_message": None}
 
 
 def process_data_node(state: GraphState):
-
-    print("--- [Node: Process Data] ---")
+    print_subheader("⚙️ DATA PROCESSING")
     if state.get("error_message"):
+        print_error("Skipping processing due to previous error")
         return {}
 
     run_mode = state["run_mode"]
@@ -300,21 +497,23 @@ def process_data_node(state: GraphState):
     processed_dataset: List[Dict] = []
 
     if run_mode == "initial_generation":
-        print("  Mode: Initial Generation - Creating dataset from extracted points.")
+        print_info(
+            "🔄 Mode: Initial Generation - Creating dataset from extracted points"
+        )
         # Basic synthesis: collect data dictionaries
         processed_dataset = [item.data for item in newly_extracted_points]
-        print(f"  Synthesized dataset with {len(processed_dataset)} records.")
+        print_success(f"Synthesized dataset with {len(processed_dataset)} records")
 
     elif run_mode == "refinement":
-        print("  Mode: Refinement - Applying changes to previous dataset.")
+        print_info("🔄 Mode: Refinement - Applying changes to previous dataset")
         if not previous_dataset:
-            print(
-                "  [WARN] Refinement mode, but no previous dataset was provided. Using only newly extracted points."
+            print_warning(
+                "Refinement mode, but no previous dataset was provided. Using only newly extracted points."
             )
             processed_dataset = [item.data for item in newly_extracted_points]
         else:
-            print(f"  Newly extracted points: {len(newly_extracted_points)}")
-            print(f"  Refinement Instructions: {refinement_instructions}")
+            print_info(f"Newly extracted points: {len(newly_extracted_points)}")
+            print_info(f"Refinement Instructions: {refinement_instructions}")
 
             refinement_prompt_template = """You are a data refinement assistant.
 **Your Goal:** Refine a dataset based on user instructions, using any provided new data. Output a single JSON list of records that strictly follows the target schema.
@@ -350,7 +549,7 @@ def process_data_node(state: GraphState):
    - If both datasets are empty, return `[]`.
    - If one is empty, refine the other.
 
-**Output:** Only return the final refined dataset as a valid JSON list. Do not use thriple backtick return the raw json.
+**Output:** Only return the final refined dataset as a valid JSON list. Do not use triple backtick return the raw json.
             """
             refinement_prompt = PromptTemplate.from_template(refinement_prompt_template)
             refinement_chain = refinement_prompt | llm | JsonOutputParser()
@@ -368,19 +567,26 @@ def process_data_node(state: GraphState):
             }
 
             try:
-                print("Calling LLM for refinement processing...")
-                processed_dataset = refinement_chain.invoke(refinement_input)
-                print(f"LLM refinement resulted in {len(processed_dataset)} records.")
+                print_info("🔄 Calling AI for refinement processing...")
 
-            except OutputParserException as e:
-                print(f"  [ERROR] Failed to parse LLM refinement output: {e}")
+                processed_dataset = refinement_chain.invoke(refinement_input)
+                print_success(
+                    f"AI refinement resulted in {len(processed_dataset)} records"
+                )
+
+            except Exception as e:
+                print_error(f"Failed to process refinement: {e}")
                 # Log raw output for debugging
-                raw_output = (refinement_prompt | llm | StrOutputParser()).invoke(
-                    refinement_input
-                )
-                print(
-                    f"  Raw LLM Output (Refinement):\n---\n{raw_output[:500]}...\n---"
-                )
+                try:
+                    raw_output = (refinement_prompt | llm | StrOutputParser()).invoke(
+                        refinement_input
+                    )
+                    print_warning(
+                        f"Raw LLM Output (first 200 chars): {raw_output[:200]}..."
+                    )
+                except:
+                    pass
+
                 # Handle error: Maybe return original + new, or fail.
                 processed_dataset = previous_dataset + [
                     item.data for item in newly_extracted_points
@@ -389,6 +595,12 @@ def process_data_node(state: GraphState):
                     f"LLM refinement output parsing failed: {e}"  # Propagate soft error
                 )
 
+    # Display final dataset summary
+    if processed_dataset:
+        print_data_summary(processed_dataset, title="FINAL DATASET PREVIEW")
+    else:
+        print_warning("No data was processed in the final step")
+
     return {"processed_dataset": processed_dataset, "error_message": None}
 
 
@@ -396,11 +608,9 @@ def process_data_node(state: GraphState):
 def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
     """Determines whether to continue processing or end due to errors."""
     if state.get("error_message"):
-        print(
-            f"--- [Edge Logic] --- Error encountered: {state['error_message']}. Ending workflow."
-        )
+        print_error(f"Error encountered: {state['error_message']}. Ending workflow.")
         return "end_error"
-    print("--- [Edge Logic] --- No errors detected. Continuing workflow.")
+    print_info("No errors detected. Continuing workflow.")
     return "continue"
 
 
@@ -408,34 +618,32 @@ def decide_after_interpret(
     state: GraphState,
 ) -> Literal["proceed_to_retrieve", "loop_for_clarification", "handle_error"]:
     """Routes flow after interpretation based on errors or need for clarification."""
-    print("--- [Edge: Decide After Interpret] ---")
+    print_subheader("🧭 WORKFLOW DECISION POINT")
     if state.get("error_message"):
-        print("  Decision: Error occurred during interpretation.")
+        print_error("Error occurred during interpretation")
         return "handle_error"
 
     if state.get("needs_clarification"):
-        print(
-            "  Decision: Clarification needed (API should pause/resume). Routing back for re-interpretation."
-        )
+        print_warning("Clarification needed. Routing back to root")
         # The API will pause *before* this edge routes. When it resumes,
         # the graph follows this path back to increment/interpret.
         return "loop_for_clarification"
 
     if not state.get("interpreted_schema"):
         # Safety check: Should not happen if no error and no clarification needed
-        print("  Decision: Interpretation successful, but schema missing unexpectedly.")
+        print_error("Interpretation successful, but schema missing unexpectedly")
         state["error_message"] = (
             "Interpretation node finished without error but schema is missing."
         )
         return "handle_error"
 
     if state["run_mode"] == "refinement":
-        print(
-            " Decision: Interpretation successful, refining run detected, proceeding to processing"
+        print_success(
+            "Interpretation successful (refinement mode). Proceeding to processing."
         )
         return "proceed_to_processing"
 
-    print("  Decision: Interpretation successful, proceeding to retrieve documents.")
+    print_success("Interpretation successful. Proceeding to retrieve documents.")
     return "proceed_to_retrieve"
 
 
@@ -449,7 +657,7 @@ workflow.add_node("retrieve_documents", retrieve_documents_node)
 workflow.add_node("extract_data", extract_data_node)
 workflow.add_node("process_data", process_data_node)
 workflow.add_node(
-    "error_node", lambda state: print("Workflow terminated due to error.")
+    "error_node", lambda state: print_error("⛔ Workflow terminated due to error.")
 )
 
 # Define edges
@@ -464,7 +672,7 @@ workflow.add_conditional_edges(
         "loop_for_clarification": "root",
         "proceed_to_retrieve": "retrieve_documents",
         "proceed_to_processing": "process_data",
-        "end_error": "error_node",
+        "handle_error": "error_node",
     },
 )
 
@@ -474,7 +682,6 @@ workflow.add_conditional_edges(
     {
         "continue": "extract_data",
         "end_error": "error_node",
-        # Add path for no docs found if needed: "end_no_docs": END
     },
 )
 
@@ -491,30 +698,3 @@ workflow.add_edge("error_node", END)  # Error path ends here
 
 # Compile the graph
 graph = workflow.compile(checkpointer=saver)
-
-if __name__ == "__main__":
-    print("\n--- Running Sample Workflow ---")
-
-    # 1. User Query Input:
-    initial_state = {"original_query": "give data"}
-    print(f"Initial Query: {initial_state['original_query']}")
-
-    # 2. Run the Graph:
-    final_state = graph.invoke(
-        initial_state, {"recursion_limit": 10}
-    )  # Add recursion limit
-
-    # 4. Final Output:
-    #    The `final_state` dictionary contains the results of the workflow.
-    print("\n--- Workflow Complete ---")
-    if final_state.get("error_message"):
-        print(f"Workflow failed with error: {final_state['error_message']}")
-    elif final_state.get("process_data") is not None:
-        print("Final Dataset:")
-        # Pretty print the final dataset
-        print(json.dumps(final_state["processed_data"], indent=2))
-        print(f"\nTotal records generated: {len(final_state['processed_dataset'])}")
-    else:
-        print(
-            "Workflow finished, but no dataset was generated (e.g., no relevant documents found or data extracted)."
-        )
