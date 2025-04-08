@@ -90,7 +90,10 @@ async def send_prompt(request: InvokeRequest):
             # --- Check if clarification is needed AFTER interpretation ---
             # We check the state *after* the node that *might* trigger the interrupt condition
             if node_name == "interpret_query":
-                if current_state.get("needs_clarification"):
+                if (
+                    current_state.get("needs_clarification")
+                    and not current_state.get("interpreted_schema").needs_statistics
+                ):
                     print(f"Run {run_id}: Pausing for clarification.")
                     interpreted = current_state.get("interpreted_schema", None)
                     if interpreted:
@@ -122,6 +125,7 @@ async def send_prompt(request: InvokeRequest):
                 run_id=run_id,
                 status="complete",
                 final_dataset=dataset,
+                message="Here are your statistics:" if image_path else None,
                 image_path=image_path,
             )
 

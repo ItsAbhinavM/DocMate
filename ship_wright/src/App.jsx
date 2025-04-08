@@ -16,8 +16,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [runId, setRunId] = useState();
 
-  const addMessage = (text, isUser) => {
-    setMessages((prev) => [...prev, { text, isUser }]);
+  const addMessage = (text, isUser, image = null) => {
+    setMessages((prev) => [...prev, { text, isUser, image }]);
   };
 
   const handleSendMessage = async (text) => {
@@ -55,15 +55,21 @@ function App() {
       setIsLoading(false);
 
       if (data.status === "waiting_clarification") {
-        addMessage(data.message, false, data.url);
+        addMessage(data.message, false);
       } else {
+        // Check if there's an image path in the response
+        const imagePath = data.image_path || null;
+
         if (data.message) {
-          addMessage(data.message, false);
+          // Add message with image if available
+          addMessage(data.message, false, "http://127.0.0.1:8000/" + imagePath);
         }
 
         console.log(data["final_dataset"], "this is the json to be viewed");
 
-        addMessage(<JSONView jsoner={{ 0: data["final_dataset"] }} />, false);
+        if (data["final_dataset"]) {
+          addMessage(<JSONView jsoner={{ 0: data["final_dataset"] }} />, false);
+        }
       }
 
       console.log("This is the run id", data["run_id"]);

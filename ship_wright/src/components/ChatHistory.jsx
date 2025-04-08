@@ -1,44 +1,38 @@
+import React from 'react';
+
 function ChatHistory({ messages }) {
-    return (
-      <div className="flex flex-col space-y-4 p-4">
-        {messages.map((message, index) => (
+  return (
+    <div className="flex flex-col space-y-4 py-4">
+      {messages.map((message, index) => (
+        <div
+          key={index}
+          className={`flex ${message.isUser ? 'justify-end' : 'justify-start'}`}
+        >
           <div
-            key={index}
-            className={`flex ${message.isUser ? 'justify-end' : 'items-start'}`}
-          >
-            {!message.isUser && (
-              <img
-                src="/Type 1.gif"
-                alt="Bot"
-                className="w-8 h-8 mr-2 self-start mt-1"
-              />
-            )}
-  
-            <div
-              className={`p-3 rounded-lg max-w-3xl overflow-x-auto ${
-                message.isUser
-                  ? 'bg-blue-600 text-white self-end'
-                  : 'bg-gray-700 text-white'
+            className={`max-w-3/4 rounded-xl p-4 ${message.isUser
+                ? 'bg-gray-600 text-white'
+                : 'bg-gray-800 text-white'
               }`}
-            >
-              {message.component ? (
-                message.component
-              ) : (
-                <p className="whitespace-pre-wrap">{message.text}</p>
-              )}
-              {message.imageUrl && (
+          >
+            {/* Display message text */}
+            <div className="mb-2">{message.text}</div>
+
+            {/* Display image if present */}
+            {message.image && (
+              <div className="mt-3">
                 <img
-                  src={message.imageUrl}
+                  src={message.image}
                   alt="Response image"
-                  className="mt-2 max-w-full rounded"
+                  className="max-w-full rounded-lg"
+                  style={{ maxHeight: '300px' }}
                 />
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-    );
-  }
-  
-  export default ChatHistory;
-  
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default ChatHistory;
