@@ -14,3 +14,4 @@ fastapi[standard]
 python-multipart
 python-docx
 langgraph
+pytesseract

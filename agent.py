@@ -1,12 +1,13 @@
 import json
 import os
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, Optional, TypedDict
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.output_parsers import PydanticOutputParser, StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
@@ -25,6 +26,9 @@ class InterpretedSchema(BaseModel):
     retrieval_query: str = Field(
         description="Optimized query string for vector similarity search based on the user request."
     )
+    ambiguity: Optional[str] = Field(
+        description="If the user query is too vague or could be interpreted in multiple ways request explain briefly why clarification is needed"
+    )
 
 
 class ExtractedItem(BaseModel):
@@ -42,21 +46,32 @@ class ExtractedItem(BaseModel):
 # --- Define the State for the Graph ---
 class GraphState(TypedDict):
     original_query: str
+    current_query: Optional[str]  # Query from a clarification event
     interpreted_schema: Optional[InterpretedSchema]
     retrieved_docs: Optional[List[Document]]  # Docs from vectorstore
     extracted_data_points: List[ExtractedItem]  # List of raw extractions
     synthesized_dataset: Optional[List[Dict]]  # Final structured dataset
     error_message: Optional[str]
+    needs_clarification: Optional[bool]
+    current_iteration: int
 
 
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
+saver = MemorySaver()
 
 
 # --- Define Graph Nodes ---
+def root_node(state: GraphState):
+    """Agent start point, increments the iteration count on each loop"""
+    iteration = state.get("current_iteration", 0) + 1
+    print(f"--- [Node: Increment Iteration] --- (Starting Iteration {iteration})")
+    return {"current_iteration": iteration}
+
+
 def interpret_query_node(state: GraphState):
     """Interprets the user query to define schema and retrieval query."""
     print("--- [Node: Interpret Query] ---")
-    user_query = state["original_query"]
+    user_query = state.get("current_query") or state["original_query"]
 
     parser = PydanticOutputParser(pydantic_object=InterpretedSchema)
 
@@ -67,6 +82,7 @@ User Query: {query}
 Based on the query, define:
 1.  `schema_description`: A dictionary describing the columns/fields the user wants in their dataset. Keys should be concise field names, values should be clear descriptions.
 2.  `retrieval_query`: A query string optimized for finding relevant documents/chunks in a vector database related to the user's request. Focus on key entities, actions, and concepts.
+3.  `ambiguity`: briefly explain *why* (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, leave as null.
 
 {format_instructions}
 """,
@@ -77,9 +93,20 @@ Based on the query, define:
     chain = prompt | llm | parser
     try:
         interpreted_output = chain.invoke({"query": user_query})
+        print(f"Ambiguity: {interpreted_output.ambiguity}")
         print(f"Interpreted Schema: {interpreted_output.schema_description}")
         print(f"Retrieval Query: {interpreted_output.retrieval_query}")
-        return {"interpreted_schema": interpreted_output, "error_message": None}
+        if interpreted_output.ambiguity:
+            return {
+                "interpreted_schema": interpreted_output,
+                "needs_clarification": True,
+                "error_message": None,
+            }
+        return {
+            "interpreted_schema": interpreted_output,
+            "needs_clarification": False,
+            "error_message": None,
+        }
     except Exception as e:
         print(f"[ERROR] Failed to interpret query: {e}")
         return {"error_message": f"Failed to interpret query: {str(e)}"}
@@ -224,7 +251,8 @@ def synthesize_dataset_node(state: GraphState):
     return {"synthesized_dataset": final_dataset, "error_message": None}
 
 
-def should_continue(state: GraphState):
+# -- Functions for conditional edges --
+def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
     """Determines whether to continue processing or end due to errors."""
     if state.get("error_message"):
         print(
@@ -235,10 +263,40 @@ def should_continue(state: GraphState):
     return "continue"
 
 
+def decide_after_interpret(
+    state: GraphState,
+) -> Literal["proceed_to_retrieve", "loop_for_clarification", "handle_error"]:
+    """Routes flow after interpretation based on errors or need for clarification."""
+    print("--- [Edge: Decide After Interpret] ---")
+    if state.get("error_message"):
+        print("  Decision: Error occurred during interpretation.")
+        return "handle_error"
+
+    if state.get("needs_clarification"):
+        print(
+            "  Decision: Clarification needed (API should pause/resume). Routing back for re-interpretation."
+        )
+        # The API will pause *before* this edge routes. When it resumes,
+        # the graph follows this path back to increment/interpret.
+        return "loop_for_clarification"
+
+    if not state.get("interpreted_schema"):
+        # Safety check: Should not happen if no error and no clarification needed
+        print("  Decision: Interpretation successful, but schema missing unexpectedly.")
+        state["error_message"] = (
+            "Interpretation node finished without error but schema is missing."
+        )
+        return "handle_error"
+
+    print("  Decision: Interpretation successful, proceeding to retrieve documents.")
+    return "proceed_to_retrieve"
+
+
 # --- Build the Graph ---
 workflow = StateGraph(GraphState)
 
 # Add nodes
+workflow.add_node("root", root_node)
 workflow.add_node("interpret_query", interpret_query_node)
 workflow.add_node("retrieve_documents", retrieve_documents_node)
 workflow.add_node("extract_data", extract_data_node)
@@ -248,13 +306,16 @@ workflow.add_node(
 )
 
 # Define edges
-workflow.set_entry_point("interpret_query")
+workflow.set_entry_point("root")
+
+workflow.add_edge("root", "interpret_query")
 
 workflow.add_conditional_edges(
     "interpret_query",
-    should_continue,
+    decide_after_interpret,
     {
-        "continue": "retrieve_documents",
+        "loop_for_clarification": "root",
+        "proceed_to_retrieve": "retrieve_documents",
         "end_error": "error_node",
     },
 )
@@ -275,22 +336,23 @@ workflow.add_conditional_edges(
     {"continue": "synthesize_dataset", "end_error": "error_node"},
 )
 
+
 # Final step
 workflow.add_edge("synthesize_dataset", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
 
 # Compile the graph
-graph = workflow.compile()
+graph = workflow.compile(checkpointer=saver)
 
 if __name__ == "__main__":
     print("\n--- Running Sample Workflow ---")
 
     # 1. User Query Input:
-    initial_state = {"original_query": "Identify headings"}
+    initial_state = {"original_query": "give data"}
     print(f"Initial Query: {initial_state['original_query']}")
 
     # 2. Run the Graph:
-    final_state = app.invoke(
+    final_state = graph.invoke(
         initial_state, {"recursion_limit": 10}
     )  # Add recursion limit
 
