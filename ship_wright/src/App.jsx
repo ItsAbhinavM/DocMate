@@ -8,6 +8,16 @@ import NavPanel from './components/NavPanel';
 import './App.css'
 import axios from 'axios';
 import JSONView from './components/json_view';
+// App.jsx - Main component
+import { useState, useRef, useEffect } from "react";
+import Logo from "../public/type_1.gif";
+import ChatForm from "./components/ChatForm";
+import AudioRecorder from "./components/AudioRecorder";
+import FileUpload from "./components/FileUpload";
+import ChatHistory from "./components/ChatHistory";
+import NavPanel from "./components/NavPanel";
+import "./App.css";
+import axios from "axios";
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -16,16 +26,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [runId, setRunId] = useState()
 
-  const addMessage = (messageContent, isUser, url = null) => {
-    setMessages(prev => [
-      ...prev,
-      {
-        isUser,
-        text: typeof messageContent === 'string' ? messageContent : null,
-        component: typeof messageContent !== 'string' ? messageContent : null,
-        imageUrl: url,
-      }
-    ]);
+  const addMessage = (text, isUser) => {
+    setMessages((prev) => [...prev, { text, isUser }]);
   };
 
   const handleSendMessage = async (text) => {
@@ -48,14 +50,18 @@ function App() {
     console.log(payload, "here is payload")
 
     try {
-      const response = await axios.post('http://localhost:8000/send_prompt', {
-        original_query: text
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
+      const response = await axios.post(
+        "http://localhost:8000/send_prompt",
+        {
+          original_query: text,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+        },
+      );
 
       const data = response.data;
       console.log("here is the data btw", data);
@@ -78,8 +84,8 @@ function App() {
       setRunId(data["run_id"])
 
     } catch (error) {
-      console.error('Error sending message:', error);
-      addMessage('Sorry, there was an error processing your request.', false);
+      console.error("Error sending message:", error);
+      addMessage("Sorry, there was an error processing your request.", false);
     }
   };
 
@@ -96,7 +102,7 @@ function App() {
   return (
     <div className="flex w-screen min-h-screen bg-opacity-70 bg-black font-sans overflow-x-hidden">
       {showNav && <NavPanel />}
-      
+
       <div className="flex-1 flex flex-col items-center h-screen">
         {/* Header with logo */}
         <div className="font-light text-white text-center p-5 flex items-center">
@@ -105,7 +111,7 @@ function App() {
         </div>
 
         {/* Toggle Navigation Button */}
-        <button 
+        <button
           className="absolute z-10 left-0 top-0 bg-gray-700 text-white p-2"
           onClick={toggleNav}
         >
@@ -117,12 +123,17 @@ function App() {
           <div className="flex flex-col justify-center items-center overflow-y-auto">
             {messages.length === 0 && (
               <h1 className="text-white text-center font-bold tracking-tight mt-40 text-4xl">
-                Your Personal<br />LLM
+                Your Personal
+                <br />
+                LLM
               </h1>
             )}
           </div>
-          
-          <div className="flex-1 w-full max-w-4xl px-4 overflow-y-auto" ref={contentRef}>
+
+          <div
+            className="flex-1 w-full max-w-4xl px-4 overflow-y-auto"
+            ref={contentRef}
+          >
             <ChatHistory messages={messages} />
             <div className={`flex space-x-1 ${isLoading?"ml-[5vw]":"hidden"}`}>
               <div className="w-2 h-2 bg-white rounded-full animate-bounce" />
@@ -130,7 +141,7 @@ function App() {
               <div className="w-2 h-2 bg-white rounded-full animate-bounce delay-300" />
             </div>
           </div>
-          
+
           <div className="w-full flex flex-col items-center mb-4">
             <AudioRecorder onTranscription={handleSendMessage} />
             <ChatForm onSendMessage={handleSendMessage} />
