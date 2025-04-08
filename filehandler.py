@@ -55,44 +55,10 @@ def load_or_create_vectorstore():
         return FAISS.load_local(VECTOR_DB_DIR, embedding_model)
     else:
         print(
-            "[INFO] Vector store doesn't exstringist yet. It will be created when you add documents."
+            "[INFO] Vector store doesn't exist yet. It will be created when you add documents."
         )
         return None
 
-def get_document_stats():
-    """Gather statistics about documents in the vector store."""
-    import os
-    import glob
-    
-    # Sample statistics structure
-    stats = {
-        "total_docs": 0,
-        "doc_types": {},
-        "token_counts": [],
-        "avg_tokens_per_doc": 0,
-        "total_tokens": 0
-    }
-    
-    # Count documents in uploads directory
-    upload_dir = "uploads/"
-    if os.path.exists(upload_dir):
-        for ext in [".pdf", ".csv", ".xlsx", ".doc", ".docx", ".txt"]:
-            count = len(glob.glob(os.path.join(upload_dir, f"*{ext}")))
-            if count > 0:
-                stats["doc_types"][ext] = count
-                stats["total_docs"] += count
-    
-    # Generate sample token counts
-    import numpy as np
-    if stats["total_docs"] > 0:
-        stats["token_counts"] = np.random.normal(500, 200, stats["total_docs"]).tolist()
-        stats["total_tokens"] = sum(stats["token_counts"])
-        stats["avg_tokens_per_doc"] = stats["total_tokens"] / stats["total_docs"]
-    else:
-        # Add some sample data if no documents found
-        stats["token_counts"] = [0]
-    
-    return stats
 
 def add_pdf_to_vectorstore(pdf_path):
     print(f"[INFO] Processing {pdf_path}...")
@@ -273,18 +239,6 @@ def add_csv_to_vectorstore(csv_path):
 
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {csv_path} added to vector store.")
-
-def get_all_documents():
-    """Retrieve all documents from the vector store."""
-    from langchain_community.vectorstores import Chroma  
-    
-    try:
-        vectorstore = Chroma(persist_directory="./chroma_db")
-        docs = vectorstore.similarity_search("", k=1000)        
-        return docs
-    except Exception as e:
-        print(f"Error retrieving documents: {e}")
-        return []
 
 
 def query_vectorstore(question, k=5, allowed_types=None):

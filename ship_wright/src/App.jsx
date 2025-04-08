@@ -40,18 +40,14 @@ function App() {
     console.log(payload, "here is payload");
 
     try {
-      const response = await axios.post(
-        "http://localhost:8000/send_prompt",
+      const response = await axios.post('http://localhost:8000/send_prompt', 
+        payload, 
         {
-          original_query: text,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-        },
-      );
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
 
       const data = response.data;
       console.log("here is the data btw", data);

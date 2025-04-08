@@ -48,9 +48,6 @@ class InterpretedSchema(BaseModel):
         description="If refining, specific instructions derived from the query on how to modify the previous dataset (e.g., 'filter out entries where status is closed', 'add currency symbol'). Null for initial generation.",
         default=None,
     )
-    needs_statistics: Optional[bool]= Field(
-            description="If the user needs to see the statistics of the overall datbase"
-    )
 
 
 class ExtractedItem(BaseModel):
@@ -85,7 +82,6 @@ class GraphState(TypedDict):
     # Output
     processed_dataset: Optional[List[Dict]]  # Final structured dataset
 
-    needs_statistics: Optional[bool]
 
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-thinking-exp-01-21")
 saver = MemorySaver()
@@ -607,55 +603,6 @@ def process_data_node(state: GraphState):
 
     return {"processed_dataset": processed_dataset, "error_message": None}
 
-def generate_statistics_node(state: GraphState):
-    """Generates statistics about the available documents."""
-    print("--- [Node: Generate Statistics] ---")
-    
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import io
-    import base64
-    from filehandler import get_document_stats
-    
-    try:
-        # Get statistics from your documents
-        doc_stats = get_document_stats()
-        
-        # Create some visualizations
-        plt.figure(figsize=(10, 6))
-        
-        # Document count by type
-        plt.subplot(1, 2, 1)
-        doc_types = [key for key in doc_stats['doc_types'].keys()]
-        counts = [value for value in doc_stats['doc_types'].values()]
-        plt.bar(doc_types, counts)
-        plt.title('Document Count by Type')
-        plt.xticks(rotation=45)
-        
-        # Token distribution
-        plt.subplot(1, 2, 2)
-        plt.hist(doc_stats['token_counts'], bins=10)
-        plt.title('Token Count Distribution')
-        
-        # Save plot to bytes
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        
-        # Convert to base64 for easy transmission
-        img_str = base64.b64encode(buf.read()).decode('utf-8')
-        
-        plt.close()
-        
-        return {
-            "statistics": doc_stats,
-            "visualization": img_str,
-            "error_message": None
-        }
-    except Exception as e:
-        print(f"[ERROR] Failed to generate statistics: {e}")
-        return {"error_message": f"Failed to generate statistics: {str(e)}"}
 
 # -- Functions for conditional edges --
 def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
@@ -675,10 +622,6 @@ def decide_after_interpret(
     if state.get("error_message"):
         print_error("Error occurred during interpretation")
         return "handle_error"
-
-    if state.get("needs_statistics"):
-        print("Decision: Statistics requested. Routing to statistics node")
-        return "generate_statistics"
 
     if state.get("needs_clarification"):
         print_warning("Clarification needed. Routing back to root")
@@ -703,18 +646,6 @@ def decide_after_interpret(
     print_success("Interpretation successful. Proceeding to retrieve documents.")
     return "proceed_to_retrieve"
 
-def decide_after_synthesize(
-    state: GraphState,
-) -> Literal["end_workflow", "generate_statistics"]:
-    """Routes flow after synthesis to either end or generate statistics."""
-    print("--- [Edge: Decide After Synthesize] ---")
-    
-    if state.get("needs_statistics", False):
-        print("  Decision: Statistics requested. Routing to statistics node.")
-        return "generate_statistics"
-    
-    print("  Decision: Normal workflow complete, ending.")
-    return "end_workflow"
 
 # --- Build the Graph ---
 workflow = StateGraph(GraphState)
@@ -744,14 +675,7 @@ workflow.add_conditional_edges(
         "handle_error": "error_node",
     },
 )
-workflow.add_conditional_edges(
-    "synthesize_dataset",
-    decide_after_synthesize,
-    {
-        "end_workflow": END,
-        "generate_statistics": "generate_statistics",
-    },
-)
+
 workflow.add_conditional_edges(
     "retrieve_documents",
     should_continue,
@@ -771,6 +695,6 @@ workflow.add_conditional_edges(
 # Final step
 workflow.add_edge("process_data", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
-workflow.add_edge("generate_statistics",END)
+
 # Compile the graph
 graph = workflow.compile(checkpointer=saver)
