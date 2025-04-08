@@ -87,7 +87,7 @@ contextBridge.exposeInMainWorld("api", {
     formData.append("file", new Blob([fileData.buffer], { type: fileData.type }), fileData.name);
   
     try {
-      const response = await fetch("http://localhost:8000/upload_file", {
+      const response = await fetch("http://localhost:8000/file_upload", {
         method: "POST",
         body: formData,
       });

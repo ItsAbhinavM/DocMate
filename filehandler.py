@@ -248,82 +248,81 @@ def query_vectorstore(question, k=5, allowed_types=None):
     return results
 
 
-def pdf_driver():
-    file_name = input("Enter the path to the PDF: ").strip()
-    if os.path.exists(file_name):
-        add_pdf_to_vectorstore(file_name)
+def pdf_driver(file_path):
+    if os.path.exists(file_path):
+        add_pdf_to_vectorstore(file_path)
+        print("added to verctorstore pdf")
+    else:
+        print("[ERROR] File not found.")
+
+def csv_driver(file_path):
+    if os.path.exists(file_path):
+        print("added to verctorstore csv")
+        add_csv_to_vectorstore(file_path)
     else:
         print("[ERROR] File not found.")
 
 
-def csv_driver():
-    file_name = input("Enter the path to the CSV: ").strip()
-    if os.path.exists(file_name):
-        add_csv_to_vectorstore(file_name)
+def xlsx_driver(file_path):
+    # file_name = input("Enter the path to the XLSX: ").strip()
+    if os.path.exists(file_path):
+        add_xlsx_to_vectorstore(file_path)
     else:
         print("[ERROR] File not found.")
 
 
-def xlsx_driver():
-    file_name = input("Enter the path to the XLSX: ").strip()
-    if os.path.exists(file_name):
-        add_xlsx_to_vectorstore(file_name)
-    else:
-        print("[ERROR] File not found.")
-
-
-def image_driver():
-    file_name = input("Enter the path to the Image: ").strip()
-    if os.path.exists(file_name):
-        add_image_to_vectorstore(file_name)
+def image_driver(file_path):
+    # file_name = input("Enter the path to the Image: ").strip()
+    if os.path.exists(file_path):
+        add_image_to_vectorstore(file_path)
     else:
         print("[ERROR] File not found")
 
 
-def doc_driver():
-    file_name = input("Enter the path to the DOC: ").strip()
-    if os.path.exists(file_name):
-        add_doc_to_vectorstore(file_name)
+def doc_driver(file_path):
+    # file_name = input("Enter the path to the DOC: ").strip()
+    if os.path.exists(file_path):
+        add_doc_to_vectorstore(file_path)
     else:
         print("[ERROR] File not found.")
 
 
-def docx_driver():
-    file_name = input("Enter the path to the DOC: ").strip()
-    if os.path.exists(file_name):
-        add_doc_to_vectorstore(file_name)
+def docx_driver(file_path):
+    # file_name = input("Enter the path to the DOC: ").strip()
+    if os.path.exists(file_path):
+        add_doc_to_vectorstore(file_path)
     else:
         print("[ERROR] File not found.")
 
 
-if __name__ == "__main__":
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+# if __name__ == "__main__":
+#     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-    while True:
-        print("\nOptions:")
-        print("1. Upload a PDF")
-        print("2. Upload a CSV")
-        print("3. Upload a XLSX")
-        print("4  Upload a Doc")
-        print("5. Upload an Image")
-        print("6. Search documents")
-        print("7. Exit")
-        choice = input("Choose an option (1/2/3/4): ")
+#     while True:
+#         print("\nOptions:")
+#         print("1. Upload a PDF")
+#         print("2. Upload a CSV")
+#         print("3. Upload a XLSX")
+#         print("4  Upload a Doc")
+#         print("5. Upload an Image")
+#         print("6. Search documents")
+#         print("7. Exit")
+#         choice = input("Choose an option (1/2/3/4): ")
 
-        if choice == "1":
-            pdf_driver()
-        if choice == "5":
-            image_driver()
-        elif choice == "2":
-            csv_driver()
-        elif choice == "3":
-            xlsx_driver()
-        elif choice == "4":
-            doc_driver()
-        elif choice == "6":
-            question = input("Enter your question: ")
-            query_vectorstore(question, k=5, allowed_types=None)
-        elif choice == "7":
-            print("Exiting....")
-        else:
-            print("Invalid option.")
+#         if choice == "1":
+#             pdf_driver()
+#         if choice == "5":
+#             image_driver()
+#         elif choice == "2":
+#             csv_driver()
+#         elif choice == "3":
+#             xlsx_driver()
+#         elif choice == "4":
+#             doc_driver()
+#         elif choice == "6":
+#             question = input("Enter your question: ")
+#             query_vectorstore(question, k=5, allowed_types=None)
+#         elif choice == "7":
+#             print("Exiting....")
+#         else:
+#             print("Invalid option.")

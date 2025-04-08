@@ -1,10 +1,12 @@
 import json
+import os
 
 import aiofiles
 from fastapi import FastAPI, Request, UploadFile
 from pydantic import BaseModel
 
 from agent import graph
+from filehandler import pdf_driver, csv_driver, xlsx_driver, image_driver, doc_driver, docx_driver
 
 app = FastAPI()
 
@@ -27,7 +29,25 @@ def send_prompt(prompt: Prompt):
 
 @app.post("/file_upload")
 async def upload_image(file: UploadFile, request: Request):
-    async with aiofiles.open(f"uploads/{file.filename}", "wb") as local_file:
+    file_path = f"uploads/{file.filename}"
+    async with aiofiles.open(file_path, "wb") as local_file:
         content = await file.read()
         await local_file.write(content)
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+
+    match ext:
+        case ".pdf":
+            pdf_driver(file_path)
+        case ".csv":
+            csv_driver(file_path)
+        case ".xlsx":
+            xlsx_driver(file_path)
+        case ".doc":
+            doc_driver(file_path)
+        case ".docx":
+            docx_driver(file_path)
+        case _:
+            return {"error": f"Unsupported file type: {ext}"}
+
     return f"{request.base_url}uploads/{file.filename}"
