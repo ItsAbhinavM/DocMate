@@ -141,6 +141,7 @@ async def get_statistics():
             
         return {
             "statistics": stats_result["statistics"],
+            "image_path": stats_result["image_path"],
             "visualization": stats_result["visualization"]
         }
     except Exception as e:

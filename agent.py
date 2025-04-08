@@ -303,7 +303,11 @@ def generate_statistics_node(state: GraphState):
         # Save plot to bytes
         buf = io.BytesIO()
         plt.tight_layout()
-        plt.savefig(buf, format='png')
+        output_dir="statistics_output"
+        filename = "analytics_dashboard.png"
+        file_path = os.path.join(output_dir, filename)
+        plt.savefig(file_path)
+        print("Image has been saved successfully")
         buf.seek(0)
         
         # Convert to base64 for easy transmission
