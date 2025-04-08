@@ -48,6 +48,9 @@ class InterpretedSchema(BaseModel):
         description="If refining, specific instructions derived from the query on how to modify the previous dataset (e.g., 'filter out entries where status is closed', 'add currency symbol'). Null for initial generation.",
         default=None,
     )
+    needs_statistics: Optional[bool]= Field(
+            description="If the user needs to see the statistics of the overall datbase"
+    )
 
 
 class ExtractedItem(BaseModel):
@@ -203,7 +206,8 @@ Analyze the query to determine:
 1.  `schema_description`: The schema of the *final* dataset after refinement. This might be the same as the old schema or modified by the request. Keys = concise field names, values = clear descriptions.
 2.  `retrieval_query`: A query for vector search *only if* the refinement requires fetching *new* information from documents. If the refinement only involves filtering/modifying the *existing* data (passed separately), this should be null.
 3.  `refinement_instructions`: A clear, actionable instruction for a downstream process describing *how* to modify the previous dataset based on the user's query AND any newly extracted data (if retrieval_query is not null). Examples: "Filter previous data to keep only entries with status='active'", "Merge new data points, prioritizing newer sources for conflicting values", "Add a 'category' field based on the 'description'". If the query implies replacing the dataset entirely with new data, state that.
-4.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Refinement target unclear", "Filter criteria ambiguous"). Otherwise, null.
+4. `needs_statistics`: Set to true if the user is requesting statistics or analysis about the document collection itself, rather than data extraction. For example, requests like "show me statistics of the documents", "how many PDFs do we have?", or "what's the average document length?" would set this to true.
+5.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Refinement target unclear", "Filter criteria ambiguous"). Otherwise, null.
 """
 
     else:  # initial_generation
@@ -212,7 +216,8 @@ Analyze the query to define:
 1.  `schema_description`: A dictionary describing the columns/fields for the new dataset. Keys = concise field names, values = clear descriptions.
 2.  `retrieval_query`: A query string optimized for finding relevant documents in a vector database. Focus on key entities, actions, and concepts. This should *not* be null for initial generation unless the query is completely nonsensical.
 3.  `refinement_instructions`: Should be null for initial generation.
-4.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, null.
+4. `needs_statistics`: Set to true if the user is requesting statistics or analysis about the document collection itself, rather than data extraction. For example, requests like "show me statistics of the documents", "how many PDFs do we have?", or "what's the average document length?" would set this to true.
+5.  `ambiguity`: Briefly explain *why* clarification is needed if the query is vague (e.g., "Query is too general", "Specific entities not mentioned"). Otherwise, null.
 """
 
     template += "\n{format_instructions}\n"
@@ -309,7 +314,7 @@ def retrieve_documents_node(state: GraphState):
         print_info(f'🔍 Searching for documents with query: "{retrieval_query}"')
 
         documents = vectorstore.max_marginal_relevance_search(
-            retrieval_query, k=10, fetch_k=50
+            retrieval_query, k=1, fetch_k=50
         )
         if not documents:
             print_warning("No documents found matching the query")
@@ -603,6 +608,289 @@ def process_data_node(state: GraphState):
 
     return {"processed_dataset": processed_dataset, "error_message": None}
 
+def generate_statistics_node(state: GraphState):
+    """Generates statistics about the available documents."""
+    print_subheader("📈 DOCUMENT STATISTICS")
+
+    try:
+        # Import necessary libraries
+        import numpy as np
+        import matplotlib.pyplot as plt
+        import io
+        import base64
+        import os
+        from filehandler import vectorstore  # Import vectorstore directly
+        import glob
+        
+        # Create output directory
+        output_dir = "statistics_output"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Manual document stats collection if get_document_stats() isn't returning the right format
+        print_info("Collecting document statistics directly...")
+        
+        # Get documents directly from the uploads directory
+        upload_dir = "uploads"
+        pdf_files = glob.glob(f"{upload_dir}/*.pdf")
+        txt_files = glob.glob(f"{upload_dir}/*.txt")
+        docx_files = glob.glob(f"{upload_dir}/*.docx")
+        other_files = glob.glob(f"{upload_dir}/*.*")
+        
+        # Filter out already counted files from other_files
+        other_extensions = set(os.path.splitext(f)[1] for f in other_files) - {'.pdf', '.txt', '.docx'}
+        other_files = [f for f in other_files if os.path.splitext(f)[1] in other_extensions]
+        
+        documents = []
+        
+        # Process PDF files
+        for pdf_path in pdf_files:
+            try:
+                filename = os.path.basename(pdf_path)
+                file_size = os.path.getsize(pdf_path)
+                page_count = 0
+                token_estimate = 0
+                
+                # Try to get page count
+                try:
+                    import fitz  # PyMuPDF
+                    with fitz.open(pdf_path) as doc:
+                        page_count = len(doc)
+                        # Estimate tokens (very rough approximation)
+                        text_length = sum(len(page.get_text()) for page in doc)
+                        token_estimate = text_length // 4  # Rough estimate: 4 chars per token
+                except Exception as e:
+                    print_warning(f"Could not analyze PDF {filename}: {e}")
+                
+                doc_info = {
+                    "name": filename,
+                    "path": pdf_path,
+                    "type": "PDF",
+                    "size_bytes": file_size,
+                    "pages": page_count,
+                    "tokens": token_estimate,
+                    "structured": False  # Default assumption
+                }
+                documents.append(doc_info)
+            except Exception as e:
+                print_warning(f"Error processing PDF {pdf_path}: {e}")
+        
+        # Process TXT files
+        for txt_path in txt_files:
+            try:
+                filename = os.path.basename(txt_path)
+                file_size = os.path.getsize(txt_path)
+                
+                # Count lines and estimate tokens
+                with open(txt_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    try:
+                        content = f.read()
+                        line_count = content.count('\n') + 1
+                        token_estimate = len(content.split()) # Word count as token estimate
+                    except:
+                        line_count = 0
+                        token_estimate = file_size // 4  # Fallback estimate
+                
+                doc_info = {
+                    "name": filename,
+                    "path": txt_path,
+                    "type": "TXT",
+                    "size_bytes": file_size,
+                    "lines": line_count,
+                    "tokens": token_estimate,
+                    "structured": False
+                }
+                documents.append(doc_info)
+            except Exception as e:
+                print_warning(f"Error processing TXT {txt_path}: {e}")
+        
+        # Process DOCX files (basic stats)
+        for docx_path in docx_files:
+            try:
+                filename = os.path.basename(docx_path)
+                file_size = os.path.getsize(docx_path)
+                
+                # Try to get word count
+                word_count = 0
+                try:
+                    import docx
+                    doc = docx.Document(docx_path)
+                    word_count = sum(len(p.text.split()) for p in doc.paragraphs)
+                except:
+                    word_count = file_size // 20  # Very rough estimate
+                
+                doc_info = {
+                    "name": filename,
+                    "path": docx_path,
+                    "type": "DOCX",
+                    "size_bytes": file_size,
+                    "tokens": word_count,
+                    "structured": True  # Docx often has structure
+                }
+                documents.append(doc_info)
+            except Exception as e:
+                print_warning(f"Error processing DOCX {docx_path}: {e}")
+        
+        # Process other files (just basic info)
+        for other_path in other_files:
+            try:
+                filename = os.path.basename(other_path)
+                file_type = os.path.splitext(filename)[1].upper().replace('.', '')
+                file_size = os.path.getsize(other_path)
+                
+                doc_info = {
+                    "name": filename,
+                    "path": other_path,
+                    "type": file_type if file_type else "Unknown",
+                    "size_bytes": file_size,
+                    "tokens": file_size // 10,  # Very rough estimate
+                    "structured": False
+                }
+                documents.append(doc_info)
+            except Exception as e:
+                print_warning(f"Error processing file {other_path}: {e}")
+        
+        # Try to get vector store statistics
+        try:
+            if hasattr(vectorstore, 'get_document_count'):
+                vector_count = vectorstore.get_document_count()
+                print_info(f"Vector store contains {vector_count} document chunks")
+            elif hasattr(vectorstore, '__len__'):
+                vector_count = len(vectorstore)
+                print_info(f"Vector store contains {vector_count} document chunks")
+            else:
+                vector_count = "Unknown"
+                print_warning("Could not determine vector store document count")
+        except Exception as e:
+            vector_count = "Error"
+            print_warning(f"Error accessing vector store: {e}")
+        
+        # Check if we found documents
+        total_docs = len(documents)
+        if total_docs == 0:
+            print_warning("No documents found in uploads directory")
+            return {
+                "statistics": {"total_docs": 0, "documents": []},
+                "error_message": "No documents available for statistics generation"
+            }
+        
+        print_success(f"Found {total_docs} documents")
+        
+        # Continue with statistics generation similar to before
+        # Calculate structured vs unstructured
+        structured_counts = sum(1 for doc in documents if doc.get("structured", False))
+        unstructured_counts = total_docs - structured_counts
+        
+        # Calculate file types distribution
+        file_types = {}
+        for doc in documents:
+            doc_type = doc.get("type", "Unknown")
+            file_types.setdefault(doc_type, 0)
+            file_types[doc_type] += 1
+        
+        # Calculate token counts by type
+        token_counts_by_type = {}
+        for doc in documents:
+            doc_type = doc.get("type", "Unknown")
+            tokens = doc.get("tokens", 0)
+            token_counts_by_type.setdefault(doc_type, []).append(tokens)
+        
+        total_token_by_type = {k: sum(v) for k, v in token_counts_by_type.items()}
+        
+        # Get top heavy docs
+        top_heavy_docs = sorted(
+            documents,
+            key=lambda d: d.get("tokens", 0),
+            reverse=True
+        )[:5]
+        
+        # Create visualizations (now with 4 plots in a 2x2 grid)
+        plt.figure(figsize=(14, 10))
+        
+        # 1. Structured vs Unstructured Pie
+        plt.subplot(2, 2, 1)
+        plt.pie(
+            [structured_counts, unstructured_counts],
+            labels=["Structured", "Unstructured"],
+            autopct="%1.1f%%",
+            startangle=140
+        )
+        plt.title("Document Structure Types")
+        
+        # 2. File Types Distribution
+        plt.subplot(2, 2, 2)
+        plt.bar(file_types.keys(), file_types.values())
+        plt.title("Document Format Types")
+        plt.xticks(rotation=45)
+        
+        # 3. Token Load by Type
+        plt.subplot(2, 2, 3)
+        plt.bar(total_token_by_type.keys(), total_token_by_type.values())
+        plt.title("Total Tokens by Document Type")
+        plt.xticks(rotation=45)
+        
+        # 4. Top Heavy Docs
+        plt.subplot(2, 2, 4)
+        names = [doc.get("name", f"Doc {i}")[:20] for i, doc in enumerate(top_heavy_docs)]
+        tokens = [doc.get("tokens", 0) for doc in top_heavy_docs]
+        plt.barh(names, tokens)
+        plt.title("Top 5 Largest Documents (by token count)")
+        
+        plt.tight_layout()
+        
+        # Save visualization
+        filename = "document_analytics.png"
+        file_path = os.path.join(output_dir, filename)
+        plt.savefig(file_path)
+        print_success(f"Statistics visualization saved to {file_path}")
+        
+        # Convert to base64 for visualization in frontend
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        img_str = base64.b64encode(buf.read()).decode('utf-8')
+        plt.close()
+        
+        # Generate text summary
+        summary = {
+            "total_documents": total_docs,
+            "structured_documents": structured_counts,
+            "unstructured_documents": unstructured_counts,
+            "document_types": file_types,
+            "total_tokens_by_type": total_token_by_type,
+            "vector_store_documents": vector_count,
+            "largest_documents": [
+                {
+                    "name": doc.get("name", "Unknown"), 
+                    "type": doc.get("type", "Unknown"),
+                    "tokens": doc.get("tokens", 0)
+                } 
+                for doc in top_heavy_docs
+            ]
+        }
+        
+        print_data_summary(summary, title="DOCUMENT STATISTICS SUMMARY")
+        
+        # Create combined statistics object
+        doc_stats = {
+            "total_docs": total_docs,
+            "documents": documents,
+            "summary": summary
+        }
+        
+        return {
+            "statistics": doc_stats,
+            "summary": summary,
+            "visualization": img_str,
+            "image_path": file_path,
+            "error_message": None
+        }
+
+    except Exception as e:
+        print_error(f"Failed to generate statistics: {str(e)}")
+        import traceback
+        traceback.print_exc()  # Print the full traceback for debugging
+        return {"error_message": f"Failed to generate statistics: {str(e)}"} 
+
 
 # -- Functions for conditional edges --
 def should_continue(state: GraphState) -> Literal["continue", "end_error"]:
@@ -622,6 +910,10 @@ def decide_after_interpret(
     if state.get("error_message"):
         print_error("Error occurred during interpretation")
         return "handle_error"
+
+    if state.get("needs_statistics"):
+        print("Decision: Statistics requested. Routing to statistics node")
+        return "generate_statistics"
 
     if state.get("needs_clarification"):
         print_warning("Clarification needed. Routing back to root")
@@ -646,6 +938,18 @@ def decide_after_interpret(
     print_success("Interpretation successful. Proceeding to retrieve documents.")
     return "proceed_to_retrieve"
 
+def decide_after_synthesize(
+    state: GraphState,
+) -> Literal["end_workflow", "generate_statistics"]:
+    """Routes flow after synthesis to either end or generate statistics."""
+    print("--- [Edge: Decide After Synthesize] ---")
+    
+    if state.get("needs_statistics", False):
+        print("  Decision: Statistics requested. Routing to statistics node.")
+        return "generate_statistics"
+    
+    print("  Decision: Normal workflow complete, ending.")
+    return "end_workflow"
 
 # --- Build the Graph ---
 workflow = StateGraph(GraphState)
@@ -656,6 +960,7 @@ workflow.add_node("interpret_query", interpret_query_node)
 workflow.add_node("retrieve_documents", retrieve_documents_node)
 workflow.add_node("extract_data", extract_data_node)
 workflow.add_node("process_data", process_data_node)
+workflow.add_node("generate_statistics",generate_statistics_node)
 workflow.add_node(
     "error_node", lambda state: print_error("⛔ Workflow terminated due to error.")
 )
@@ -673,9 +978,20 @@ workflow.add_conditional_edges(
         "proceed_to_retrieve": "retrieve_documents",
         "proceed_to_processing": "process_data",
         "handle_error": "error_node",
+        "generate_statistics": "generate_statistics",
+        "end_error": "error_node",
     },
 )
+workflow.add_edge("process_data",'generate_statistics')
 
+workflow.add_conditional_edges(
+    "process_data",
+    decide_after_synthesize,
+    {
+        "end_workflow": END,
+        "generate_statistics": "generate_statistics",
+    },
+)
 workflow.add_conditional_edges(
     "retrieve_documents",
     should_continue,
@@ -695,6 +1011,5 @@ workflow.add_conditional_edges(
 # Final step
 workflow.add_edge("process_data", END)  # Successful completion ends here
 workflow.add_edge("error_node", END)  # Error path ends here
-
 # Compile the graph
 graph = workflow.compile(checkpointer=saver)
