@@ -5,7 +5,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+statistics_output/
 # C extensions
 *.so
 
