@@ -1,165 +1,284 @@
 <!doctype html>
 <html>
-
-<head>
+  <head>
     <meta charset="UTF-8" />
 
     <title>Orcha</title>
     <link rel="stylesheet" href="index.css" />
-    <meta http-equiv="Content-Security-Policy" content="connect-src 'self' http://localhost:8000" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="connect-src 'self' http://localhost:8000"
+    />
     <style>
-        #input-container {
-            width: 100%;
-            max-width: 700px;
-            border: 1px solid #ccc;
-            border-radius: 25px;
+      #input-container {
+        width: 100%;
+        max-width: 700px;
+        border: 1px solid #ccc;
+        border-radius: 25px;
+        display: flex;
+        align-items: center;
+      }
+
+      #chat-box {
+        border-radius: 25px;
+        flex: 1;
+        border: none;
+        outline: none;
+        padding-left: 10px;
+        font-size: 16px;
+        line-height: 1.5;
+        min-height: 50px;
+        overflow: hidden;
+        resize: none;
+        box-sizing: border-box;
+      }
+
+      #send-chat {
+        background-color: blanchedalmond;
+      }
+
+      #send-chat:hover {
+        background-color: #e9d477;
+      }
+    </style>
+  </head>
+
+  <body
+    style="
+      margin: 0px;
+      font-family: &quot;Gill Sans&quot;, &quot;Gill Sans MT&quot;, Calibri,
+        &quot;Trebuchet MS&quot;, sans-serif;
+      background-color: rgba(0, 0, 0, 0.7);
+      overflow-x: hidden;
+    "
+  >
+    <div style="width: 100vw; min-height: 100vh; display: flex">
+      <div id="nav" style="background-color: rgb(44, 39, 39)"></div>
+      <div
+        style="
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          height: 100vh;
+        "
+      >
+        <div
+          style="
+            font-weight: lighter;
+            color: white;
+            text-align: center;
+            padding: 20px;
             display: flex;
             align-items: center;
-        }
-        
-        #chat-box {
-            border-radius: 25px;
-            flex: 1;
-            border: none;
-            outline: none;
-            padding-left: 10px;
-            font-size: 16px;
-            line-height: 1.5;
-            min-height: 50px;
-            overflow: hidden;
-            resize: none;
-            box-sizing: border-box;
-        }
-        
-        #send-chat {
-            background-color: blanchedalmond;
-        }
-        
-        #send-chat:hover {
-            background-color: #e9d477;
-        }
-    </style>
-</head>
-
-<body style="
-            margin: 0px;
-            font-family:
-                &quot;Gill Sans&quot;, &quot;Gill Sans MT&quot;, Calibri,
-                &quot;Trebuchet MS&quot;, sans-serif;
-            background-color: rgba(0, 0, 0, 0.7);
-            overflow-x: hidden;
-        ">
-    <div style="width: 100vw; min-height: 100vh; display: flex">
-        <div id="nav" style="background-color: rgb(44, 39, 39)"></div>
-        <div style="
-                    flex: 1;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    height: 100vh;
-                ">
-            <div style="
-                        font-weight: lighter;
-                        color: white;
-                        text-align: center;
-                        padding: 20px;
-                        display: flex;
-                        align-items: center;
-                    ">
-                <img id="logo" src="./Type 1.gif" width="106vw" height="60vw" />
-                <p id="orcha-heading">Orchestrater</p>
-            </div>
-            <div style="
-                        flex: 1;
-                        width: 100%;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        flex-direction: column;
-                        flex-grow: 1;
-                        overflow: auto;
-                    ">
-                <div style="
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
-                            align-items: center;
-                            overflow-y: auto;
-                        ">
-                    <button id="nav-btn" style="
-                                position: absolute;
-                                z-index: 10;
-                                left: 0px;
-                                top: 0px;
-                            ">
-                            X
-                        </button>
-                    <div>
-                        <!-- <button id="voice" style="background-color: cadetblue;">Click me</button>
-                        <div class="output" style="color: white;">Color goes here</div> -->
-                        <h1 id="welcome" style="
-                                    color: white;
-                                    text-align: center;
-                                    font-weight: bold;
-                                    letter-spacing: -3px;
-                                    margin-top: 10vh;
-                                ">
-                            Your Personal<br />LLM
-                        </h1>
-                    </div>
-                </div>
-                <div id="content" style="flex: 1"></div>
-            </div>
-            <form>
-                <button id="recordBtn">Start Recording</button>
-                <button id="stopBtn" disabled>Stop Recording</button>
-                <button id="sendBtn" disabled>Send Audio</button>
-                <audio id="liveAudio" controls></audio>
-                <audio id="player" controls></audio>
-            </form>
-            <form id="chat-form" style="
-                        display: flex;
-                        width: 100%;
-                        justify-content: center;
-                        max-width: 40vw;
-                        margin: 20px;
-                    ">
-                <div id="input-container" style="margin-right: 5px">
-                    <textarea id="chat-box" placeholder="Get started" style="
-                                background-color: rgb(44, 39, 39);
-                                color: white;
-                                outline: none;
-                            "></textarea>
-                </div>
-                <div style="display: flex; align-items: end">
-                    <button type="submit" name="send-chat" id="send-chat" style="
-                                border: none;
-                                border-radius: 50px;
-                                min-width: 100px;
-                                min-height: 60px;
-                                max-height: 50px;
-                            ">
-                            Send
-                        </button>
-                </div>
-            </form>
-            <div id="drop-zone" style="
-                        border: 2px dashed #aaa;
-                        padding: 20px;
-                        margin-bottom: 20px;
-                        text-align: center;
-                    ">
-                Drag and drop your file here
-            </div>
-            <form id="upload-form" action="#" method="post" enctype="multipart/form-data" style="margin-bottom: 20px">
-                <input type="file" id="file-input" name="myFile" required />
-                <button type="submit" id="send-file">Upload</button>
-            </form>
-            <div id="dispose" style="flex: 1"></div>
+          "
+        >
+          <img id="logo" src="./Type 1.gif" width="106vw" height="60vw" />
+          <p id="orcha-heading">Orchestrater</p>
         </div>
+        <div
+          style="
+            flex: 1;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            flex-grow: 1;
+            overflow: auto;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              align-items: center;
+              overflow-y: auto;
+            "
+          >
+            <button
+              id="nav-btn"
+              style="position: absolute; z-index: 10; left: 0px; top: 0px"
+            >
+              X
+            </button>
+            <div>
+              <!-- <button id="voice" style="background-color: cadetblue;">Click me</button>
+                        <div class="output" style="color: white;">Color goes here</div> -->
+              <h1
+                id="welcome"
+                style="
+                  color: white;
+                  text-align: center;
+                  font-weight: bold;
+                  letter-spacing: -3px;
+                  margin-top: 10vh;
+                "
+              >
+                Your Personal<br />LLM
+              </h1>
+            </div>
+          </div>
+          <div id="content" style="flex: 1"></div>
+        </div>
+        <!-- Update the chat form section -->
+        <form
+          id="chat-form"
+          style="
+            display: flex;
+            width: 100%;
+            justify-content: center;
+            max-width: 40vw;
+            margin: 20px;
+          "
+        >
+          <div
+            id="input-container"
+            style="margin-right: 5px; position: relative"
+          >
+            <textarea
+              id="chat-box"
+              placeholder="Get started"
+              style="
+                background-color: rgb(44, 39, 39);
+                color: white;
+                outline: none;
+                padding-right: 80px;
+              "
+            ></textarea>
+
+            <!-- Action buttons inside the input container -->
+            <div
+              id="action-buttons"
+              style="
+                position: absolute;
+                right: 10px;
+                bottom: 10px;
+                display: flex;
+                gap: 10px;
+              "
+            >
+              <button
+                type="button"
+                id="mic-toggle"
+                style="
+                  background: none;
+                  border: none;
+                  color: white;
+                  cursor: pointer;
+                  font-size: 18px;
+                  padding: 5px;
+                "
+              >
+                🎤
+              </button>
+              <button
+                type="button"
+                id="file-toggle"
+                style="
+                  background: none;
+                  border: none;
+                  color: white;
+                  cursor: pointer;
+                  font-size: 18px;
+                  padding: 5px;
+                "
+              >
+                📎
+              </button>
+            </div>
+
+            <!-- File upload area (hidden by default) -->
+            <div
+              id="file-upload-area"
+              style="
+                display: none;
+                position: absolute;
+                bottom: 60px;
+                right: 0;
+                background-color: rgb(44, 39, 39);
+                border: 1px solid #444;
+                border-radius: 10px;
+                padding: 10px;
+                width: 250px;
+              "
+            >
+              <div
+                id="drop-zone"
+                style="
+                  border: 2px dashed #aaa;
+                  padding: 10px;
+                  margin-bottom: 10px;
+                  text-align: center;
+                  color: white;
+                "
+              >
+                Drop file here
+              </div>
+              <input
+                type="file"
+                id="file-input"
+                name="myFile"
+                style="color: white; margin-bottom: 5px; width: 100%"
+              />
+            </div>
+
+            <!-- Recording indicator (hidden by default) -->
+            <div
+              id="recording-indicator"
+              style="
+                display: none;
+                position: absolute;
+                bottom: 60px;
+                right: 0;
+                background-color: rgb(44, 39, 39);
+                border: 1px solid #444;
+                border-radius: 10px;
+                padding: 10px;
+                width: 250px;
+              "
+            >
+              <div style="color: white; text-align: center">
+                <span id="recording-status">Recording...</span>
+                <span id="recording-time" style="margin-left: 10px">00:00</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: end">
+            <button
+              type="submit"
+              name="send-chat"
+              id="send-chat"
+              style="
+                border: none;
+                border-radius: 50px;
+                min-width: 100px;
+                min-height: 60px;
+                max-height: 50px;
+              "
+            >
+              Send
+            </button>
+          </div>
+        </form>
+
+        <!-- Hide the original file upload elements -->
+        <div id="drop-zone" style="display: none"></div>
+        <form id="upload-form" style="display: none"></form>
+
+        <!-- Keep the audio elements but hide them -->
+        <div style="display: none">
+          <audio id="liveAudio" controls></audio>
+          <audio id="player" controls></audio>
+          <button id="sendBtn">Send Audio</button>
+        </div>
+        <div id="dispose" style="flex: 1"></div>
+      </div>
     </div>
     <script type="module" src="init.js"></script>
     <!-- <script type="module" src="renderer.js"></script> -->
-</body>
-
+  </body>
 </html>
+

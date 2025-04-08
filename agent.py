@@ -7,9 +7,11 @@ import fitz
 from colorama import Fore, Style, init
 from dotenv import load_dotenv
 from langchain_core.documents import Document
-from langchain_core.output_parsers import (JsonOutputParser,
-                                           PydanticOutputParser,
-                                           StrOutputParser)
+from langchain_core.output_parsers import (
+    JsonOutputParser,
+    PydanticOutputParser,
+    StrOutputParser,
+)
 from langchain_core.prompts import PromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver

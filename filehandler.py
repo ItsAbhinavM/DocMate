@@ -59,20 +59,21 @@ def load_or_create_vectorstore():
         )
         return None
 
+
 def get_document_stats():
     """Gather statistics about documents in the vector store."""
-    import os
     import glob
-    
+    import os
+
     # Sample statistics structure
     stats = {
         "total_docs": 0,
         "doc_types": {},
         "token_counts": [],
         "avg_tokens_per_doc": 0,
-        "total_tokens": 0
+        "total_tokens": 0,
     }
-    
+
     # Count documents in uploads directory
     upload_dir = "uploads/"
     if os.path.exists(upload_dir):
@@ -81,9 +82,10 @@ def get_document_stats():
             if count > 0:
                 stats["doc_types"][ext] = count
                 stats["total_docs"] += count
-    
+
     # Generate sample token counts
     import numpy as np
+
     if stats["total_docs"] > 0:
         stats["token_counts"] = np.random.normal(500, 200, stats["total_docs"]).tolist()
         stats["total_tokens"] = sum(stats["token_counts"])
@@ -91,8 +93,9 @@ def get_document_stats():
     else:
         # Add some sample data if no documents found
         stats["token_counts"] = [0]
-    
+
     return stats
+
 
 def add_pdf_to_vectorstore(pdf_path):
     print(f"[INFO] Processing {pdf_path}...")
@@ -274,13 +277,14 @@ def add_csv_to_vectorstore(csv_path):
     vectorstore.save_local(VECTOR_DB_DIR)
     print(f"[SUCCESS] {csv_path} added to vector store.")
 
+
 def get_all_documents():
     """Retrieve all documents from the vector store."""
-    from langchain_community.vectorstores import Chroma  
-    
+    from langchain_community.vectorstores import Chroma
+
     try:
         vectorstore = Chroma(persist_directory="./chroma_db")
-        docs = vectorstore.similarity_search("", k=1000)        
+        docs = vectorstore.similarity_search("", k=1000)
         return docs
     except Exception as e:
         print(f"Error retrieving documents: {e}")

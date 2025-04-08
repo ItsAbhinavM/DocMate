@@ -5,6 +5,7 @@ from typing import Optional
 
 import aiofiles
 from fastapi import FastAPI, HTTPException, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -17,6 +18,16 @@ app.mount(
     "/statistics_output", StaticFiles(directory="statistics_output"), name="static"
 )
 active_runs = {}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "*"
+    ],  # Or specify: ["http://localhost:5173"] if using Vite/Tauri dev
+    allow_credentials=True,
+    allow_methods=["*"],  # You can also specify: ["POST", "GET", "OPTIONS"]
+    allow_headers=["*"],  # Or specify: ["Content-Type", "Authorization"]
+)
 
 
 class Prompt(BaseModel):
