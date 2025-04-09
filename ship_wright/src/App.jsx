@@ -102,10 +102,9 @@ function App() {
       {showNav && <NavPanel onNewChat={handleNewChat} />}
 
       <div className="flex-1 flex flex-col items-center h-screen">
-        {/* Header with logo */}
-        <div className="font-light text-white text-center p-5 flex items-center">
-          <img src={Logo} alt="Orcha Logo" className="w-24 h-14" />
-          <p className="ml-2">Orchestrater</p>
+        <div className="font-light text-white text-center p-4 flex items-center justify-center space-x-4">
+          <img src={Logo} alt="Orcha Logo" className="w-34 h-24" />
+          <div className="text-[3vw] font-bold">Doc-Mate</div>
         </div>
 
         {/* Toggle Navigation Button */}
