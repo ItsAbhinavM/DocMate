@@ -98,7 +98,7 @@ function App() {
   }, [messages]);
 
   return (
-    <div className="flex w-screen min-h-screen bg-opacity-70 bg-black font-sans overflow-x-hidden">
+    <div className="flex w-screen min-h-screen bg-opacity-80 bg-black font-sans overflow-x-hidden">
       {showNav && <NavPanel onNewChat={handleNewChat} />}
 
       <div className="flex-1 flex flex-col items-center h-screen">
@@ -143,7 +143,6 @@ function App() {
           </div>
 
           <div className="w-full flex flex-col items-center mb-4">
-            <AudioRecorder onTranscription={handleSendMessage} />
             <ChatForm onSendMessage={handleSendMessage} />
           </div>
         </div>

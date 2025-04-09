@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import FileUpload from './FileUpload';
+import AudioRecorder from './AudioRecorder';
 
 function ChatForm({ onSendMessage }) {
   const [message, setMessage] = useState('');
@@ -97,7 +98,7 @@ function ChatForm({ onSendMessage }) {
       className={`flex w-full justify-center ${expanded ? 'max-w-full' : 'max-w-lg'} my-5`}
       onSubmit={handleSubmit}
     >
-      <div className="w-full max-w-lg border border-gray-500 rounded-3xl flex flex-col items-center mr-2 relative">
+      <div className="w-full max-w-lg border border-gray-500 rounded-3xl flex flex-col items-center mr-2 relative bg-[#264c71]">
         {selectedFiles.length > 0 ? (
           <div className="w-full bg-gray-800 text-white rounded-t-3xl px-4 py-3">
             <div className="max-h-32 overflow-y-auto">
@@ -153,14 +154,15 @@ function ChatForm({ onSendMessage }) {
             }}
           />
         )}
-        <div className="self-end">
+        <div className="self-end flex">
+          <AudioRecorder onTranscription={onSendMessage} />
           <FileUpload setSelectedFiles={setSelectedFiles} />
         </div>
       </div>
       <div className="flex items-end">
         <button
           type="submit"
-          className="bg-amber-100 hover:bg-amber-200 rounded-full min-w-24 h-12 border-none"
+          className="bg-[#264c71] text-white hover:bg-amber-200 rounded-full min-w-24 h-12 border-none"
           disabled={uploading}
         >
           {selectedFiles.length > 0 ? (uploading ? 'Uploading...' : 'Upload Files') : 'Send'}

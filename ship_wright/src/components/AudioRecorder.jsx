@@ -1,6 +1,7 @@
 // components/AudioRecorder.jsx
 import { useState, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Mic from "./ui/mic";
 
 function AudioRecorder({ onTranscription }) {
   const [isRecording, setIsRecording] = useState(false);
@@ -94,24 +95,18 @@ function AudioRecorder({ onTranscription }) {
   };
 
   return (
-    <div className="flex flex-col items-center mb-4">
-      <div className="flex space-x-2 mb-2">
+    <div className="flex flex-col items-center h-full">
+      <div className="flex">
         <button
           onClick={isRecording ? stopRecording : startRecording}
-          className={`text-white px-4 py-2 rounded disabled:opacity-50 ${
+          className={`text-white py-2 rounded disabled:opacity-50 ${
             isRecording
-              ? "bg-red-500 hover:bg-red-600"
-              : "bg-blue-500 hover:bg-blue-600"
+              ? "text-red-500 hover:text-red-600"
+              : "text-white hover:text-gray-600"
           }`}
         >
-          {isRecording ? "Stop Recording" : "Start Recording"}
-        </button>
-        <button
-          onClick={downloadAudio}
-          disabled={!audioURL}
-          className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
-        >
-          Download Audio
+          {/* {isRecording ? "Stop Recording" : "Start Recording"} */}
+          <Mic />
         </button>
       </div>
 
