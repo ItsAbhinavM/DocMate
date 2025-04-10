@@ -2,6 +2,16 @@
 Your own LLM agent for generating dataset from documents.
 ## Overview
 **DocMate** is an Autonomous Document Intelligent tool that lets you chat with both structured and unstrured documents in your dataset. You can upload files, ask questions and get structured responses instantly. It support schema generation, data extraction, refinement and dynamic follow-ups. The front-end features voice input, multiple file upload and chat history.
+
+## Architecture
+### Agent Architecture
+
+<img src="https://github.com/user-attachments/assets/b746a9dc-7a4a-41a8-ae70-d00d9651acd6" width="800" />
+
+### File Handler
+
+<img src="https://github.com/user-attachments/assets/7f1c1dfd-4350-4d54-a572-bc8a9d7a3c28" width="800" /> 
+
 ## Features and Technical Highlights
 - **Multi Modal Support** <br> 
 Works with structure and unstructured files and parsed using `unstructured` library,
